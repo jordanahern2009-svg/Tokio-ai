@@ -42,7 +42,7 @@ correction that every claim has to pass through.
 - Run a rigorous two-sided permutation test comparing any two groups of
   numbers you already have, with automatic multiple-testing correction
   across everything tested in the session
-- Chat with it via a CLI; it decides when to call which tool
+- Chat with it via a full-screen terminal UI (or a plain-text REPL, `tokio-ai-plain`); it decides when to call which tool
 
 ## What it explicitly does not do
 
@@ -85,8 +85,13 @@ python -m tokio_ai.cli # if the tokio-ai console script isn't on PATH
   screening/pattern-testing/hypothesis-testing tools.
 - `tokio_ai/agent/` -- the OpenAI-compatible tool-use loop (works against
   any provider with that API shape; defaults to NVIDIA's free NIM catalog),
-  system prompt, and tool schemas.
-- `tokio_ai/cli.py` -- interactive chat entry point.
+  system prompt, and tool schemas. Pure logic, no I/O or presentation
+  concerns -- both entry points below are just views over the same `Agent`.
+- `tokio_ai/tui.py` -- the default full-screen terminal UI (`tokio-ai`),
+  built with [Textual](https://textual.textualize.io/): a fixed banner,
+  scrollable chat log, and an input box, all dark-themed.
+- `tokio_ai/cli.py` -- plain-text REPL fallback (`tokio-ai-plain`), for
+  scripting, piping, or terminals that don't support a full-screen TUI.
 
 **On language choice:** this is pure Python for now. The rigor engine (many
 permutation-test iterations over numeric arrays) is the one part of this

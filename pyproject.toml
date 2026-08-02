@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "openai>=1.50.0",
+    "textual>=0.60.0",
 ]
 
 [project.urls]
@@ -33,7 +34,8 @@ Repository = "https://github.com/jordanahern2009-svg/Tokio-ai"
 Issues = "https://github.com/jordanahern2009-svg/Tokio-ai/issues"
 
 [project.scripts]
-tokio-ai = "tokio_ai.cli:main"
+tokio-ai = "tokio_ai.tui:main"
+tokio-ai-plain = "tokio_ai.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

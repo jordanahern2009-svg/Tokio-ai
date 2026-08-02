@@ -92,13 +92,14 @@
     <li>Rank the real S&amp;P 500 by trailing return, optionally filtered by sector &mdash; handles open-ended asks like "what are the best performing stocks" without you having to already know a ticker</li>
     <li>Test whether a technical condition actually predicts what happens next &mdash; fetch, bucket, and permutation-test in one call, not the model eyeballing raw numbers</li>
     <li>Correct for multiple hypotheses tested in the same session, automatically</li>
+    <li>Runs in a full-screen terminal UI by default &mdash; dark theme, scrollable chat log, no setup beyond the API key</li>
   </ul>
 
   <h2>Quickstart</h2>
-  <pre><code>pip install -e ".[dev]"
+  <pre><code>pip install tokio-ai
 cp .env.example .env
 # fill in OPENAI_API_KEY (a free key from build.nvidia.com works out of the box)
-python -m tokio_ai.cli</code></pre>
+tokio-ai</code></pre>
 
   <h2>A real example</h2>
   <pre><code>&gt; Test whether AAPL days that gap up more than 2% at the open tend to
