@@ -41,17 +41,7 @@ def _epoch_to_date(t: int) -> date:
     return (_EPOCH + timedelta(seconds=t)).date()
 
 
-def fetch_daily_bars(symbol: str, range_: str = "10y") -> list[DailyBar]:
-    """Pull daily OHLCV bars for `symbol`.
-
-    Avoid range='max' on tickers with decades of history -- see module
-    docstring. 20y is safe for essentially every liquid large-cap.
-    """
-    url = _CHART_URL.format(symbol=urllib.parse.quote(symbol), range_=range_)
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        payload = json.loads(r.read())
-
+def _parse_chart_payload(payload: dict, symbol: str) -> list[DailyBar]:
     result = payload["chart"]["result"]
     if not result:
         raise RuntimeError(f"Yahoo returned no data for {symbol}: {payload['chart'].get('error')}")
@@ -76,7 +66,21 @@ def fetch_daily_bars(symbol: str, range_: str = "10y") -> list[DailyBar]:
                 volume=v or 0,
             )
         )
+    return bars
 
+
+def fetch_daily_bars(symbol: str, range_: str = "10y") -> list[DailyBar]:
+    """Pull daily OHLCV bars for `symbol`.
+
+    Avoid range='max' on tickers with decades of history -- see module
+    docstring. 20y is safe for essentially every liquid large-cap.
+    """
+    url = _CHART_URL.format(symbol=urllib.parse.quote(symbol), range_=range_)
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        payload = json.loads(r.read())
+
+    bars = _parse_chart_payload(payload, symbol)
     _assert_daily_granularity(bars, symbol, range_)
     return bars
 
