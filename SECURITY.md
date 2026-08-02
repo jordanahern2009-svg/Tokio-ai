@@ -15,6 +15,11 @@ issue.
 - **Outbound network calls** to Yahoo Finance, SEC EDGAR, and your
   configured LLM endpoint. No other network access, no telemetry, no
   analytics.
+- **Local chat storage** at `~/.tokio_ai/chats/`, one plaintext JSON file
+  per chat (your questions, the agent's answers, and the statistical test
+  ledger). Never uploaded anywhere -- it's read and written only by your
+  own machine. Delete a chat via `Ctrl+P` in the TUI, or just delete the
+  files directly; there's no separate "clear history" concept beyond that.
 - **No arbitrary code execution.** Tool inputs from the model are typed
   JSON (strings, numbers, arrays) passed to fixed Python functions --
   there is no `eval`, `exec`, or shell-out anywhere in the tool-calling

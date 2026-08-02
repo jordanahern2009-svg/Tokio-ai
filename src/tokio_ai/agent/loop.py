@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Callable
 
 from openai import OpenAI
 
@@ -38,9 +39,23 @@ MAX_TOOL_ROUNDS = 8  # hard cap so a confused loop can't spin forever
 
 OPENAI_TOOLS = to_openai_format(TOOLS)
 
+# "auto": tools run immediately, no confirmation (the default -- every tool
+# in this project is read-only/analysis-only, no trades, no destructive
+# actions, so friction-free is the right default). "confirm": every tool
+# call is routed through confirm_callback first, which must return True/False
+# and may block the calling thread (see tui.py for how the TUI answers this
+# from its own event loop via App.call_from_thread).
+PERMISSION_LEVELS = ("auto", "confirm")
+
 
 class Agent:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None, model: str | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        initial_usage: dict | None = None,
+    ):
         self.client = OpenAI(
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url or os.environ.get("OPENAI_BASE_URL", DEFAULT_BASE_URL),
@@ -51,7 +66,33 @@ class Agent:
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.ledger = TestLedger()
 
+        initial_usage = initial_usage or {}
+        self.usage = {
+            "prompt_tokens": initial_usage.get("prompt_tokens", 0),
+            "completion_tokens": initial_usage.get("completion_tokens", 0),
+            "total_tokens": initial_usage.get("total_tokens", 0),
+            "request_count": initial_usage.get("request_count", 0),
+        }
+
+        self.permission_level = "auto"
+        # Callable[[tool_name, tool_input], bool]; only consulted when
+        # permission_level == "confirm". None means "confirm" degrades to
+        # auto-approve rather than crashing (better than blocking forever).
+        self.confirm_callback: Callable[[str, dict], bool] | None = None
+
+    def _record_usage(self, response) -> None:
+        self.usage["request_count"] += 1
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+        self.usage["prompt_tokens"] += usage.prompt_tokens or 0
+        self.usage["completion_tokens"] += usage.completion_tokens or 0
+        self.usage["total_tokens"] += usage.total_tokens or 0
+
     def _execute_tool(self, name: str, tool_input: dict) -> str:
+        if self.permission_level == "confirm" and self.confirm_callback is not None:
+            if not self.confirm_callback(name, tool_input):
+                return f"ERROR: user denied permission to run {name!r}"
         try:
             if name == "get_price_history":
                 bars = fetch_daily_bars(tool_input["symbol"], tool_input.get("range", "10y"))
@@ -100,6 +141,7 @@ class Agent:
                     tool_choice="auto",
                     messages=self.messages,
                 )
+                self._record_usage(response)
                 msg = response.choices[0].message
 
                 if not msg.tool_calls:

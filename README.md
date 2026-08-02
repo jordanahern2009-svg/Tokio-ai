@@ -43,6 +43,19 @@ correction that every claim has to pass through.
   numbers you already have, with automatic multiple-testing correction
   across everything tested in the session
 - Chat with it via a full-screen terminal UI (or a plain-text REPL, `tokio-ai-plain`); it decides when to call which tool
+- Multiple named, disk-persisted chats -- start a new one, browse and resume old ones, each keeps its own multiple-testing correction history so resuming picks up exactly where you left off
+- A usage view showing real token/request counts for the current chat (not a dollar cost -- the free tier has none)
+- A settings screen for the model (free-text override; only the default is verified to support tool-calling) and tool-call permissions (auto-approve, or confirm every call)
+
+## Keybindings (TUI)
+
+| Key | Action |
+|---|---|
+| `Ctrl+N` | New chat |
+| `Ctrl+P` | Browse / switch / delete past chats |
+| `Ctrl+U` | Usage (tokens, requests, this chat) |
+| `Ctrl+O` | Settings (model, tool permissions) |
+| `Ctrl+C` | Quit |
 
 ## What it explicitly does not do
 
@@ -89,9 +102,14 @@ python -m tokio_ai.cli # if the tokio-ai console script isn't on PATH
   concerns -- both entry points below are just views over the same `Agent`.
 - `tokio_ai/tui.py` -- the default full-screen terminal UI (`tokio-ai`),
   built with [Textual](https://textual.textualize.io/): a fixed banner,
-  scrollable chat log, and an input box, all dark-themed.
+  scrollable chat log, an input box, and modal screens for chat
+  browsing/usage/settings, all dark-themed.
 - `tokio_ai/cli.py` -- plain-text REPL fallback (`tokio-ai-plain`), for
   scripting, piping, or terminals that don't support a full-screen TUI.
+- `tokio_ai/chat_store.py` -- local chat persistence, one JSON file per
+  chat under `~/.tokio_ai/chats/` (no database dependency). Stores the raw
+  message history plus the `TestLedger` state, so resuming a chat resumes
+  its multiple-testing correction too, not just the transcript.
 
 **On language choice:** this is pure Python for now. The rigor engine (many
 permutation-test iterations over numeric arrays) is the one part of this
