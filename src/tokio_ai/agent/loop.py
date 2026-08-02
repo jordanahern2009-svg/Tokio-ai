@@ -17,6 +17,7 @@ from openai import OpenAI
 from ..rigor.ledger import TestLedger
 from ..tools.filings import recent_filings
 from ..tools.hypothesis import test_hypothesis as _test_hypothesis
+from ..tools.patterns import test_return_pattern as _test_return_pattern
 from ..tools.prices import fetch_daily_bars
 from .system_prompt import SYSTEM_PROMPT
 from .tool_schemas import TOOLS, to_openai_format
@@ -62,6 +63,16 @@ class Agent:
             if name == "test_hypothesis":
                 return _test_hypothesis(
                     self.ledger, tool_input["name"], tool_input["group_a"], tool_input["group_b"]
+                )
+            if name == "test_return_pattern":
+                return _test_return_pattern(
+                    self.ledger,
+                    tool_input["symbol"],
+                    tool_input["feature"],
+                    tool_input["op"],
+                    tool_input["threshold"],
+                    tool_input["horizon_days"],
+                    tool_input.get("range", "10y"),
                 )
             return f"ERROR: unknown tool {name!r}"
         except Exception as e:  # tool errors go back to the model as text, never crash the loop

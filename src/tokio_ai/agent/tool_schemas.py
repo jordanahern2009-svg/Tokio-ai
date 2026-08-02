@@ -55,6 +55,49 @@ TOOLS = [
         },
     },
     {
+        "name": "test_return_pattern",
+        "description": (
+            "Test whether a simple technical condition on a stock predicts its "
+            "forward return. Handles the fetch + bucketing + statistical test "
+            "all in one call -- use this instead of manually pulling price "
+            "history and eyeballing it whenever the question is shaped like "
+            "'does X predict what happens next'. Prefer this over "
+            "test_hypothesis for anything involving raw price data; only use "
+            "test_hypothesis directly when you already have two numeric "
+            "groups from elsewhere."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Ticker symbol, e.g. AAPL"},
+                "feature": {
+                    "type": "string",
+                    "enum": ["daily_return", "gap_pct", "volume_ratio"],
+                    "description": (
+                        "daily_return: that day's close-over-close return. "
+                        "gap_pct: that day's open vs. the prior day's close. "
+                        "volume_ratio: that day's volume vs. its trailing 20-day average."
+                    ),
+                },
+                "op": {"type": "string", "enum": [">", ">=", "<", "<="]},
+                "threshold": {
+                    "type": "number",
+                    "description": "e.g. 0.02 for a 2% daily return threshold",
+                },
+                "horizon_days": {
+                    "type": "integer",
+                    "description": "how many trading days forward to measure the return",
+                },
+                "range": {
+                    "type": "string",
+                    "description": "history window to pull, e.g. 10y, 20y",
+                    "default": "10y",
+                },
+            },
+            "required": ["symbol", "feature", "op", "threshold", "horizon_days"],
+        },
+    },
+    {
         "name": "test_hypothesis",
         "description": (
             "Run a rigorous two-sided permutation test comparing two groups of "
