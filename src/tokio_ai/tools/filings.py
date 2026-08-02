@@ -60,6 +60,11 @@ class Filing:
 
 
 def recent_filings(ticker: str, form_type: str | None = None, limit: int = 10) -> list[Filing]:
+    if limit <= 0:
+        # The loop below appends a filing BEFORE checking len(out) >= limit,
+        # so without this guard limit=0 (or negative) would still return one
+        # result instead of zero.
+        return []
     cik = lookup_cik(ticker)
     data = _get_json(_SUBMISSIONS_URL.format(cik=cik))
     recent = data["filings"]["recent"]

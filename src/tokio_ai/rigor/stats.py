@@ -41,7 +41,17 @@ def permutation_test(a: list[float], b: list[float], iters: int = 5000, seed: in
     `iters` and `seed` are carried on the result so every verdict is
     independently reproducible from its own report, not just from reading
     the source code's current defaults.
+
+    The p-value uses the standard plus-one correction, `(hits+1)/(iters+1)`
+    -- never a bare `hits/iters`. With finite Monte Carlo resampling, a raw
+    ratio can land on exactly 0.0, which reads as "impossible under the
+    null" when the honest claim is "no more extreme than roughly
+    1/(iters+1)". Reporting an exact zero would be the project's own rigor
+    layer overclaiming the one thing it exists to prevent. See Phipson &
+    Smyth (2010), "Permutation P-values Should Never Be Zero".
     """
+    if iters <= 0:
+        raise ValueError(f"iters must be positive, got {iters!r}")
     if not a or not b:
         return PermutationResult(0.0, 1.0, len(a), len(b), iters, seed)
     observed = statistics.fmean(a) - statistics.fmean(b)
@@ -54,7 +64,7 @@ def permutation_test(a: list[float], b: list[float], iters: int = 5000, seed: in
         gap = statistics.fmean(pool[:n]) - statistics.fmean(pool[n:])
         if abs(gap) >= abs(observed):
             hits += 1
-    return PermutationResult(observed, hits / iters, len(a), len(b), iters, seed)
+    return PermutationResult(observed, (hits + 1) / (iters + 1), len(a), len(b), iters, seed)
 
 
 def bonferroni_correct(p_values: list[float], alpha: float = 0.05) -> list[bool]:

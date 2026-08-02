@@ -38,6 +38,22 @@ def test_unknown_name_raises():
         pass
 
 
+def test_reusing_a_name_reports_the_latest_test_not_the_first():
+    # Real bug found in manual testing: verdict() used to return on the
+    # FIRST match by name, so re-recording under the same name (a retry, or
+    # the model reusing a label) silently kept reporting stale results
+    # forever, even after a materially different second test.
+    ledger = TestLedger()
+    ledger.record("AAPL_test", PermutationResult(observed_gap=0.01, p_value=0.5, n_a=40, n_b=40))
+    assert ledger.verdict("AAPL_test").startswith("NOT SIGNIFICANT")
+
+    ledger.record("AAPL_test", PermutationResult(observed_gap=0.05, p_value=0.001, n_a=40, n_b=40))
+    verdict = ledger.verdict("AAPL_test")
+    assert verdict.startswith("SIGNIFICANT")
+    assert "p=0.0010" in verdict
+    assert "2 hypothesis" in verdict  # both entries still count toward correction
+
+
 def test_summary_reports_count():
     ledger = TestLedger()
     ledger.record("h0", PermutationResult(observed_gap=0.01, p_value=0.5, n_a=40, n_b=40))

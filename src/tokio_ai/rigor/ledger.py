@@ -33,7 +33,11 @@ class TestLedger:
     def verdict(self, name: str, alpha: float = 0.05) -> str:
         p_values = [t.result.p_value for t in self.tests]
         sig = benjamini_hochberg(p_values, alpha=alpha)
-        for i, t in enumerate(self.tests):
+        # Walk backwards so a reused name reports its MOST RECENT test, not
+        # a stale first result -- every entry (including earlier duplicates)
+        # still counts toward the correction denominator either way.
+        for i in range(len(self.tests) - 1, -1, -1):
+            t = self.tests[i]
             if t.name != name:
                 continue
             if not t.result.meets_min_sample:

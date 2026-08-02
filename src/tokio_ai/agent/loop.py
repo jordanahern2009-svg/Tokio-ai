@@ -88,45 +88,61 @@ class Agent:
             return f"ERROR: {e}"
 
     def send(self, user_text: str) -> str:
+        checkpoint = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
 
-        for _ in range(MAX_TOOL_ROUNDS):
-            response = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=4096,
-                tools=OPENAI_TOOLS,
-                tool_choice="auto",
-                messages=self.messages,
-            )
-            msg = response.choices[0].message
+        try:
+            for _ in range(MAX_TOOL_ROUNDS):
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    tools=OPENAI_TOOLS,
+                    tool_choice="auto",
+                    messages=self.messages,
+                )
+                msg = response.choices[0].message
 
-            if not msg.tool_calls:
-                self.messages.append({"role": "assistant", "content": msg.content or ""})
-                return msg.content or ""
+                if not msg.tool_calls:
+                    self.messages.append({"role": "assistant", "content": msg.content or ""})
+                    return msg.content or ""
 
-            self.messages.append(
-                {
-                    "role": "assistant",
-                    "content": msg.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                        }
-                        for tc in msg.tool_calls
-                    ],
-                }
-            )
-
-            for tc in msg.tool_calls:
-                try:
-                    tool_input = json.loads(tc.function.arguments)
-                except json.JSONDecodeError:
-                    tool_input = {}
-                result_text = self._execute_tool(tc.function.name, tool_input)
                 self.messages.append(
-                    {"role": "tool", "tool_call_id": tc.id, "content": result_text}
+                    {
+                        "role": "assistant",
+                        "content": msg.content,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    }
                 )
 
-        return "[stopped: too many tool calls in a row without a final answer]"
+                for tc in msg.tool_calls:
+                    try:
+                        tool_input = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_input = {}
+                    result_text = self._execute_tool(tc.function.name, tool_input)
+                    self.messages.append(
+                        {"role": "tool", "tool_call_id": tc.id, "content": result_text}
+                    )
+        except Exception:
+            # Roll the conversation back to before this turn -- otherwise a
+            # failed API call (network blip, timeout) leaves a dangling
+            # unanswered user message in history, and the next send() would
+            # stack a second user message right after it instead of
+            # retrying cleanly.
+            del self.messages[checkpoint:]
+            raise
+
+        bailout = "[stopped: too many tool calls in a row without a final answer]"
+        # Record this in history too -- otherwise the conversation ends
+        # mid-tool-exchange (a "tool" message with no assistant response
+        # wrapping it up), which the next turn's user message would follow
+        # directly, an invalid shape for most chat-completions APIs.
+        self.messages.append({"role": "assistant", "content": bailout})
+        return bailout

@@ -123,3 +123,19 @@ def test_recent_filings_respects_limit():
         filings._get_json = original_get_json
         filings._ticker_to_cik_cache = None
     assert len(results) == 2
+
+
+def test_recent_filings_limit_zero_or_negative_returns_empty():
+    # Real bug found in manual testing: the loop appended a filing BEFORE
+    # checking len(out) >= limit, so limit=0 silently returned 1 result
+    # instead of 0. Also verifies it short-circuits without even calling
+    # _get_json (no network/lookup needed for a request for zero results).
+    filings._ticker_to_cik_cache = {"AAPL": 320193}
+    original_get_json = filings._get_json
+    filings._get_json = lambda url: (_ for _ in ()).throw(AssertionError("should not be called"))
+    try:
+        assert filings.recent_filings("AAPL", limit=0) == []
+        assert filings.recent_filings("AAPL", limit=-3) == []
+    finally:
+        filings._get_json = original_get_json
+        filings._ticker_to_cik_cache = None

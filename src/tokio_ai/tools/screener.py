@@ -27,10 +27,11 @@ SNAPSHOT_DATE = "2026-08-02"
 _TRADING_DAYS = {"1mo": 21, "3mo": 63, "6mo": 126, "1y": 252}
 VALID_PERIODS = tuple(_TRADING_DAYS) + ("ytd",)
 DEFAULT_MAX_WORKERS = 20
+MIN_YIELD_WARNING = 0.90  # below this fraction of the universe returning data, flag it
 
 
 def load_universe(sector: str | None = None) -> list[dict]:
-    with DATA_FILE.open() as f:
+    with DATA_FILE.open(encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     if sector:
         needle = sector.lower()
@@ -77,6 +78,11 @@ def top_performers(
 ) -> dict:
     if period not in VALID_PERIODS:
         raise ValueError(f"period must be one of {VALID_PERIODS}, got {period!r}")
+    if top_n <= 0:
+        # results[:top_n] with a negative top_n silently returns "all but
+        # the last N" (Python slice semantics), not an error and not what
+        # anyone asking for "the top N" means -- fail loud instead.
+        raise ValueError(f"top_n must be positive, got {top_n!r}")
 
     universe = load_universe(sector)
     if not universe:
@@ -96,7 +102,8 @@ def top_performers(
                 results.append({"symbol": row["symbol"], "name": row["name"], "sector": row["sector"], "return": ret})
 
     results.sort(key=lambda r: r["return"], reverse=True)
-    return {
+    yield_ratio = len(results) / len(universe)
+    out = {
         "universe": "S&P 500" if not sector else f"S&P 500 / {sector}",
         "universe_snapshot_date": SNAPSHOT_DATE,
         "universe_size": len(universe),
@@ -104,3 +111,15 @@ def top_performers(
         "period": period,
         "top": results[:top_n],
     }
+    if yield_ratio < MIN_YIELD_WARNING:
+        # _fetch_one swallows all per-symbol failures the same way (network
+        # blip, delisting, or the granularity guard in prices.py silently
+        # firing across many tickers at once) -- a low yield doesn't say
+        # which, but it should be impossible to miss rather than something
+        # the caller has to notice by comparing two numbers themselves.
+        out["warning"] = (
+            f"Only {len(results)}/{len(universe)} symbols returned data "
+            f"({yield_ratio:.0%}) -- normally ~99% succeed. Results may be "
+            f"skewed; treat this ranking with reduced confidence."
+        )
+    return out
