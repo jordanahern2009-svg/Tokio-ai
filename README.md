@@ -47,13 +47,14 @@ correction that every claim has to pass through.
 ```bash
 pip install -e ".[dev]"
 cp .env.example .env
-# fill in ANTHROPIC_API_KEY (console.anthropic.com) and TOKIO_AI_USER_AGENT in .env
-tokio-ai
+# fill in OPENAI_API_KEY (a free key from https://build.nvidia.com works out of the box)
+# and TOKIO_AI_USER_AGENT in .env
+python -m tokio_ai.cli
 ```
 
 ```
-> Pull AAPL's price history and check whether returns the day after a
-  gap-up open of more than 2% differ from a normal day.
+> Pull AAPL's price history and tell me the most recent closing price.
+> Get NVDA's recent 10-K and 10-Q filings.
 ```
 
 Run the test suite (no API key needed, no network calls):

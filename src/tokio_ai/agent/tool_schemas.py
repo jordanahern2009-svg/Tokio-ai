@@ -1,6 +1,6 @@
 def to_openai_format(tools: list[dict]) -> list[dict]:
-    """Adapt this project's Anthropic-shaped tool defs (name/description/input_schema)
-    to the OpenAI-compatible function-calling shape used by NVIDIA NIM and friends."""
+    """Adapt this project's tool defs (name/description/input_schema) to the
+    OpenAI-compatible function-calling shape used by NVIDIA NIM and friends."""
     return [
         {
             "type": "function",
