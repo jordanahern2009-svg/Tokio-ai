@@ -1,5 +1,9 @@
 # TokIO AI
 
+[![tests](https://github.com/jordanahern2009-svg/Tokio-ai/actions/workflows/test.yml/badge.svg)](https://github.com/jordanahern2009-svg/Tokio-ai/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
+
 An open-source financial research agent that treats "the data supports this"
 as a claim to be tested, not a vibe to be trusted.
 
