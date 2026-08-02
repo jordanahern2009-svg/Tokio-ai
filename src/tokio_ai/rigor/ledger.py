@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .provenance import stamp
 from .stats import PermutationResult, benjamini_hochberg
 
 
@@ -44,7 +45,8 @@ class TestLedger:
             return (
                 f"{corrected} after correcting for {len(self.tests)} hypothesis "
                 f"test(s) run this session (raw p={t.result.p_value:.4f}, "
-                f"gap={t.result.observed_gap:+.4%})."
+                f"gap={t.result.observed_gap:+.4%}, "
+                f"reproducible with seed={t.result.seed} iters={t.result.iters})."
             )
         raise KeyError(f"no test recorded under name {name!r}")
 
@@ -57,4 +59,5 @@ class TestLedger:
         for t, s in zip(self.tests, sig):
             flag = "SIGNIFICANT" if s else "not significant"
             lines.append(f"  {t.name}: p={t.result.p_value:.4f} gap={t.result.observed_gap:+.4%} -> {flag}")
+        lines.append(f"[{stamp()}]")
         return "\n".join(lines)

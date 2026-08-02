@@ -22,6 +22,8 @@ class PermutationResult:
     p_value: float
     n_a: int
     n_b: int
+    iters: int = 5000
+    seed: int | None = 0
 
     @property
     def meets_min_sample(self) -> bool:
@@ -35,9 +37,13 @@ def permutation_test(a: list[float], b: list[float], iters: int = 5000, seed: in
     often a random relabeling produces a gap at least as extreme as the one
     actually observed. Makes no distributional assumption (unlike a t-test),
     which matters for the fat-tailed, skewed returns markets actually produce.
+
+    `iters` and `seed` are carried on the result so every verdict is
+    independently reproducible from its own report, not just from reading
+    the source code's current defaults.
     """
     if not a or not b:
-        return PermutationResult(0.0, 1.0, len(a), len(b))
+        return PermutationResult(0.0, 1.0, len(a), len(b), iters, seed)
     observed = statistics.fmean(a) - statistics.fmean(b)
     pool = list(a) + list(b)
     n = len(a)
@@ -48,7 +54,7 @@ def permutation_test(a: list[float], b: list[float], iters: int = 5000, seed: in
         gap = statistics.fmean(pool[:n]) - statistics.fmean(pool[n:])
         if abs(gap) >= abs(observed):
             hits += 1
-    return PermutationResult(observed, hits / iters, len(a), len(b))
+    return PermutationResult(observed, hits / iters, len(a), len(b), iters, seed)
 
 
 def bonferroni_correct(p_values: list[float], alpha: float = 0.05) -> list[bool]:
