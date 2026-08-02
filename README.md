@@ -31,9 +31,16 @@ correction that every claim has to pass through.
 
 - Pull daily OHLCV price history for any ticker (Yahoo Finance, no key)
 - Pull recent SEC filings for any ticker (EDGAR, no key)
+- Rank the real S&P 500 by trailing return, with optional GICS sector
+  filtering -- handles open-ended asks like "what are the best performing
+  stocks" without requiring you to already know a ticker or sector
+- Test whether a simple technical condition (a big daily move, a gap at the
+  open, unusual volume) actually predicts what happens next -- fetches,
+  buckets, and runs the permutation test in one call, not via the model
+  eyeballing raw numbers
 - Run a rigorous two-sided permutation test comparing any two groups of
-  numbers, with automatic multiple-testing correction across everything
-  tested in the session
+  numbers you already have, with automatic multiple-testing correction
+  across everything tested in the session
 - Chat with it via a CLI; it decides when to call which tool
 
 ## What it explicitly does not do
@@ -68,10 +75,12 @@ python -m pytest
 - `tokio_ai/rigor/` -- pure-Python statistics engine (permutation testing,
   multiple-testing correction, session-level test ledger). Fully unit
   tested, zero dependencies beyond the standard library.
-- `tokio_ai/tools/` -- data ingest (Yahoo price history, SEC EDGAR filings)
-  and the agent-facing hypothesis-testing tool.
-- `tokio_ai/agent/` -- the Claude tool-use loop, system prompt, and tool
-  schemas.
+- `tokio_ai/tools/` -- data ingest (Yahoo price history, SEC EDGAR filings,
+  a bundled real S&P 500 + GICS sector snapshot) and the agent-facing
+  screening/pattern-testing/hypothesis-testing tools.
+- `tokio_ai/agent/` -- the OpenAI-compatible tool-use loop (works against
+  any provider with that API shape; defaults to NVIDIA's free NIM catalog),
+  system prompt, and tool schemas.
 - `tokio_ai/cli.py` -- interactive chat entry point.
 
 **On language choice:** this is pure Python for now. The rigor engine (many
@@ -95,12 +104,30 @@ tradeoff for "runs with zero-cost credentials out of the box." If you have
 a paid OpenAI-compatible key with better SLAs, point `OPENAI_BASE_URL` /
 `OPENAI_API_KEY` / `TOKIO_AI_MODEL` at it and nothing else changes.
 
-Also worth knowing: asking the agent to manually crunch a large raw price
-history inline (e.g. "classify these 500 days into buckets yourself") is
-unreliable on any LLM backend, not specific to this one -- that kind of
-bucketing belongs in a Python tool the agent calls, not in the model's own
-token-by-token reasoning over a big JSON blob. Straightforward asks (pull
-data, summarize, run one hypothesis test on data you hand it) work well.
+Earlier versions asked the agent to manually crunch raw price history inline
+for "does X predict Y"-style questions, which was unreliable on any LLM
+backend (not specific to this one) -- that kind of bucketing belongs in a
+Python tool, not the model's own token-by-token reasoning over a big JSON
+blob. `test_return_pattern` and `top_performing_stocks` now do that
+fetch+compute work in Python for the common cases (a technical condition
+predicting forward returns; ranking stocks by trailing performance). If you
+ask something shaped differently enough that neither tool fits, the model
+may still fall back to reasoning over raw data by hand -- treat that path
+as unreliable until there's a dedicated tool for it.
+
+### Example
+
+```
+> Test whether AAPL days that gap up more than 2% at the open tend to keep
+  drifting up over the next 5 trading days, using 10 years of history.
+
+The test found a statistically significant pattern (p=0.0050 after
+correction), but in the opposite direction of the initial hypothesis. AAPL
+days with gaps >2% at the open saw an average -1.31% return over the next 5
+trading days, significantly underperforming the baseline. This suggests
+large upward gaps historically preceded short-term weakness (gap-fade), not
+momentum continuation. (data window: 2016-08-01 to 2026-07-31)
+```
 
 ## License
 
