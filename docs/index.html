@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokIO AI</title>
+<meta name="description" content="An open-source financial research agent that runs every claim through honest statistical testing before trusting it.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #5a5a5a;
+    --accent: #0a5c36;
+    --code-bg: #f4f4f4;
+    --border: #e2e2e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --accent: #3fb950;
+      --code-bg: #161b22;
+      --border: #30363d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  h1 { font-size: 2.1rem; margin: 0 0 0.5rem; }
+  .tagline { color: var(--muted); font-size: 1.15rem; margin: 0 0 2rem; }
+  .badges { margin-bottom: 2rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .badges img { height: 20px; }
+  p { margin: 1rem 0; }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+  }
+  code { background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 4px; }
+  pre code { background: none; padding: 0; }
+  ul { padding-left: 1.3rem; }
+  li { margin: 0.4rem 0; }
+  h2 { font-size: 1.3rem; margin-top: 2.5rem; }
+  .cta {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.65rem 1.3rem;
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  footer { margin-top: 4rem; color: var(--muted); font-size: 0.85rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TokIO AI</h1>
+  <p class="tagline">An open-source financial research agent that treats "the data supports this" as a claim to be tested, not a vibe to be trusted.</p>
+
+  <div class="badges">
+    <img src="https://github.com/jordanahern2009-svg/Tokio-ai/actions/workflows/test.yml/badge.svg" alt="tests">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
+    <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+">
+  </div>
+
+  <p>Give it a ticker, a filing, or a plain-English trading hypothesis. It pulls real data &mdash; price history, SEC filings, a real S&amp;P 500 snapshot &mdash; and before it will tell you a pattern is real, it runs the comparison through a permutation test, checks the sample size against a hard floor, and corrects for every other hypothesis you've asked it to test in the same conversation.</p>
+
+  <p>Most AI stock-chat tools will confidently describe a pattern in a handful of data points. This one is built to tell you when it can't.</p>
+
+  <a class="cta" href="https://github.com/jordanahern2009-svg/Tokio-ai">View on GitHub &rarr;</a>
+
+  <h2>What it can do</h2>
+  <ul>
+    <li>Pull daily price history and SEC filings for any ticker, no API key needed</li>
+    <li>Rank the real S&amp;P 500 by trailing return, optionally filtered by sector &mdash; handles open-ended asks like "what are the best performing stocks" without you having to already know a ticker</li>
+    <li>Test whether a technical condition actually predicts what happens next &mdash; fetch, bucket, and permutation-test in one call, not the model eyeballing raw numbers</li>
+    <li>Correct for multiple hypotheses tested in the same session, automatically</li>
+  </ul>
+
+  <h2>Quickstart</h2>
+  <pre><code>pip install -e ".[dev]"
+cp .env.example .env
+# fill in OPENAI_API_KEY (a free key from build.nvidia.com works out of the box)
+python -m tokio_ai.cli</code></pre>
+
+  <h2>A real example</h2>
+  <pre><code>&gt; Test whether AAPL days that gap up more than 2% at the open tend to
+  keep drifting up over the next 5 trading days, using 10 years of history.
+
+The test found a statistically significant pattern (p=0.0050 after
+correction), but in the opposite direction of the initial hypothesis.
+AAPL days with gaps &gt;2% at the open saw an average -1.31% return over
+the next 5 trading days, significantly underperforming the baseline.
+This suggests large upward gaps historically preceded short-term
+weakness (gap-fade), not momentum continuation.</code></pre>
+
+  <footer>
+    MIT licensed. <a href="https://github.com/jordanahern2009-svg/Tokio-ai">Source, issues, and contributions welcome on GitHub</a>.
+  </footer>
+</div>
+</body>
+</html>
