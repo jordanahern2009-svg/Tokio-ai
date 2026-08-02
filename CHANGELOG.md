@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.0 — 2026-08-02
+
+New feature release: a full-screen terminal UI, now the default `tokio-ai`
+experience.
+
+- **New `tokio_ai.tui` module**, built with [Textual](https://textual.textualize.io/):
+  a dark-themed screen with a "TOKIO AI" banner, a scrollable bordered chat
+  log, and an input box pinned at the bottom. Agent calls run in a
+  background worker so the UI stays responsive during slower (free-tier)
+  LLM round trips.
+- `tokio-ai` now launches the TUI by default. The previous plain-text REPL
+  moved to `tokio-ai-plain` (still reachable via `python -m tokio_ai.cli`)
+  for scripting, piping, or terminals that can't render a full-screen app.
+  Pure presentation layer -- both entry points share the same underlying
+  `Agent` class, no logic duplicated.
+- Verified with Textual's headless pilot test framework (no real terminal
+  or network needed) plus a rendered SVG snapshot to visually confirm the
+  layout.
+- Fixed a real legibility bug caught in review: the initial hand-drawn
+  ASCII-art banner rendered the letter "I" as a plain vertical bar,
+  indistinguishable from a "T" at a glance. Replaced with a proper figlet
+  font where I renders as a distinct slanted stroke.
+
 ## 0.1.1 — 2026-08-02
 
 Bug-fix release. A deep-dive audit (manual pass + an independent code-review

@@ -19,12 +19,17 @@ from textual.widgets import Footer, Input, RichLog, Static
 from ._env import load_env_file
 from .agent.loop import Agent
 
-BANNER = r"""
- _____     _    _____ ___
-|_   _|__ | | _|_   _/ _ \
-  | |/ _ \| |/ / | || | | |
-  | | (_) |   <  | || |_| |
-  |_|\___/|_|\_\ |_| \___/
+
+# Generated once with `pyfiglet.figlet_format("TOKIO AI", font="standard")`
+# and hard-coded here rather than adding pyfiglet as a runtime dependency
+# for static text. The hand-drawn version this replaced rendered the "I" as
+# a plain vertical bar, indistinguishable from a "T" at a glance -- this
+# font renders I as a distinct slanted stroke instead.
+BANNER = r""" _____ ___  _  _____ ___       _    ___
+|_   _/ _ \| |/ /_ _/ _ \     / \  |_ _|
+  | || | | | ' / | | | | |   / _ \  | |
+  | || |_| | . \ | | |_| |  / ___ \ | |
+  |_| \___/|_|\_\___\___/  /_/   \_\___|
 """
 
 
