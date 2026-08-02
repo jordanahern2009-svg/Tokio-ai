@@ -55,6 +55,37 @@ TOOLS = [
         },
     },
     {
+        "name": "top_performing_stocks",
+        "description": (
+            "Rank stocks by trailing return over a real S&P 500 snapshot -- "
+            "use this for open-ended questions like 'what are the best "
+            "performing stocks' when the user hasn't named a ticker or "
+            "sector. Never invent a list of tickers or sectors from memory; "
+            "this is the only source of truth for that. Optionally filter "
+            "by GICS sector (Information Technology, Health Care, "
+            "Financials, Consumer Discretionary, Communication Services, "
+            "Industrials, Consumer Staples, Energy, Utilities, Real Estate, "
+            "Materials) if the user specifies one -- otherwise omit it and "
+            "screen the whole index."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sector": {
+                    "type": "string",
+                    "description": "GICS sector name to filter to. Omit to screen the whole S&P 500.",
+                },
+                "period": {
+                    "type": "string",
+                    "enum": ["1mo", "3mo", "6mo", "1y", "ytd"],
+                    "default": "3mo",
+                },
+                "top_n": {"type": "integer", "default": 10},
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "test_return_pattern",
         "description": (
             "Test whether a simple technical condition on a stock predicts its "

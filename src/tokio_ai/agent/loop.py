@@ -19,6 +19,7 @@ from ..tools.filings import recent_filings
 from ..tools.hypothesis import test_hypothesis as _test_hypothesis
 from ..tools.patterns import test_return_pattern as _test_return_pattern
 from ..tools.prices import fetch_daily_bars
+from ..tools.screener import top_performers as _top_performers
 from .system_prompt import SYSTEM_PROMPT
 from .tool_schemas import TOOLS, to_openai_format
 
@@ -63,6 +64,14 @@ class Agent:
             if name == "test_hypothesis":
                 return _test_hypothesis(
                     self.ledger, tool_input["name"], tool_input["group_a"], tool_input["group_b"]
+                )
+            if name == "top_performing_stocks":
+                return json.dumps(
+                    _top_performers(
+                        sector=tool_input.get("sector"),
+                        period=tool_input.get("period", "3mo"),
+                        top_n=tool_input.get("top_n", 10),
+                    )
                 )
             if name == "test_return_pattern":
                 return _test_return_pattern(
