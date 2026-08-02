@@ -1,6 +1,7 @@
 # TokIO AI
 
 [![tests](https://github.com/jordanahern2009-svg/Tokio-ai/actions/workflows/test.yml/badge.svg)](https://github.com/jordanahern2009-svg/Tokio-ai/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/tokio-ai.svg)](https://pypi.org/project/tokio-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
 
@@ -52,11 +53,11 @@ correction that every claim has to pass through.
 ## Quickstart
 
 ```bash
-pip install -e ".[dev]"
-cp .env.example .env
+pip install tokio-ai
+cp .env.example .env   # or just set the env vars directly
 # fill in OPENAI_API_KEY (a free key from https://build.nvidia.com works out of the box)
 # and TOKIO_AI_USER_AGENT in .env
-python -m tokio_ai.cli
+tokio-ai
 ```
 
 ```
@@ -64,10 +65,14 @@ python -m tokio_ai.cli
 > Get NVDA's recent 10-K and 10-Q filings.
 ```
 
-Run the test suite (no API key needed, no network calls):
+### Developing locally
 
 ```bash
-python -m pytest
+git clone https://github.com/jordanahern2009-svg/Tokio-ai
+cd Tokio-ai
+pip install -e ".[dev]"
+python -m pytest       # no API key needed, no network calls
+python -m tokio_ai.cli # if the tokio-ai console script isn't on PATH
 ```
 
 ## Architecture
