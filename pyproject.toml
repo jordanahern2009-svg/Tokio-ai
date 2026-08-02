@@ -9,9 +9,28 @@ description = "An open-source financial research agent that runs every claim thr
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [{ name = "Jordan Ahern" }]
+keywords = ["llm-agent", "finance", "statistics", "algorithmic-trading", "hypothesis-testing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 dependencies = [
     "openai>=1.50.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jordanahern2009-svg/Tokio-ai"
+Repository = "https://github.com/jordanahern2009-svg/Tokio-ai"
+Issues = "https://github.com/jordanahern2009-svg/Tokio-ai/issues"
 
 [project.scripts]
 tokio-ai = "tokio_ai.cli:main"
