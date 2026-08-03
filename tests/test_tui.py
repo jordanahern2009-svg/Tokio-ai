@@ -185,20 +185,83 @@ def test_browsing_and_switching_chats_loads_the_right_history():
             await pilot.press("enter")
             await pilot.pause(delay=0.3)
 
-            # Switch back to chat A directly via the same handler the
-            # ChatListScreen callback would invoke, rather than driving the
-            # modal's ListView pixel-by-pixel.
-            messages, ledger, usage = chat_store.load_chat(chat_a_id)
-            app.current_chat_id = chat_a_id
-            app.agent.messages = messages
-            app.agent.ledger = ledger
-            app.agent.usage.update(usage or {})
-            app._render_history()
+            app._switch_to_chat(chat_a_id)
             await pilot.pause()
 
             rendered = "\n".join(str(line) for line in app.query_one("#chat-log").lines)
             assert "chat A message" in rendered
             assert "chat B message" not in rendered
+
+    asyncio.run(scenario())
+
+
+def test_sidebar_lists_chats_and_clicking_one_switches_to_it():
+    async def scenario():
+        app = _new_app()
+        app.agent.client.chat.completions.create = lambda **kwargs: _fake_response("some reply")
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#input-box")
+            for ch in "chat A message":
+                await pilot.press(ch)
+            await pilot.press("enter")
+            await pilot.pause(delay=0.3)
+            chat_a_id = app.current_chat_id
+
+            app.action_new_chat()
+            await pilot.pause()
+            await pilot.click("#input-box")
+            for ch in "chat B message":
+                await pilot.press(ch)
+            await pilot.press("enter")
+            await pilot.pause(delay=0.3)
+
+            # Sidebar should now list both chats, most recent (B) first.
+            list_view = app.query_one("#chat-list")
+            assert len(app._sidebar_chat_ids) == 2
+            assert app._sidebar_chat_ids[0] == app.current_chat_id  # chat B, active
+
+            # Click the second sidebar entry (chat A) to switch to it.
+            list_view.focus()
+            list_view.index = app._sidebar_chat_ids.index(chat_a_id)
+            await pilot.pause()
+            await pilot.press("enter")  # ListView emits Selected on enter for the focused+highlighted item
+            await pilot.pause()
+
+            assert app.current_chat_id == chat_a_id
+            rendered = "\n".join(str(line) for line in app.query_one("#chat-log").lines)
+            assert "chat A message" in rendered
+            assert "chat B message" not in rendered
+
+    asyncio.run(scenario())
+
+
+def test_sidebar_buttons_trigger_the_same_actions_as_keybindings():
+    async def scenario():
+        app = _new_app()
+
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#usage-btn")
+            await pilot.pause()
+            assert len(app.screen_stack) == 2  # the usage modal pushed onto the stack
+            await pilot.press("escape")
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+
+            await pilot.click("#settings-btn")
+            await pilot.pause()
+            assert len(app.screen_stack) == 2
+            await pilot.press("escape")
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+
+            await pilot.click("#new-chat-btn")
+            await pilot.pause()
+            # new-chat button worked if the log no longer shows any prior content
+            rendered = "\n".join(str(line) for line in app.query_one("#chat-log").lines)
+            assert "Type a question" in rendered
 
     asyncio.run(scenario())
 

@@ -42,20 +42,29 @@ correction that every claim has to pass through.
 - Run a rigorous two-sided permutation test comparing any two groups of
   numbers you already have, with automatic multiple-testing correction
   across everything tested in the session
-- Chat with it via a full-screen terminal UI (or a plain-text REPL, `tokio-ai-plain`); it decides when to call which tool
-- Multiple named, disk-persisted chats -- start a new one, browse and resume old ones, each keeps its own multiple-testing correction history so resuming picks up exactly where you left off
+- Chat with it via a full-screen terminal UI with a persistent sidebar (new chat, chat list, usage, settings), or a plain-text REPL (`tokio-ai-plain`); it decides when to call which tool
+- Multiple named, disk-persisted chats -- start a new one from the sidebar, click back into old ones, each keeps its own multiple-testing correction history so resuming picks up exactly where you left off
 - A usage view showing real token/request counts for the current chat (not a dollar cost -- the free tier has none)
 - A settings screen for the model (free-text override; only the default is verified to support tool-calling) and tool-call permissions (auto-approve, or confirm every call)
 
-## Keybindings (TUI)
+## TUI layout
+
+Sidebar on the left (new chat, chat list, usage/settings buttons), chat on
+the right -- click-driven like a normal chat app, not a keybindings-only
+REPL. A few shortcuts still exist for the same actions:
 
 | Key | Action |
 |---|---|
 | `Ctrl+N` | New chat |
-| `Ctrl+P` | Browse / switch / delete past chats |
 | `Ctrl+U` | Usage (tokens, requests, this chat) |
 | `Ctrl+O` | Settings (model, tool permissions) |
 | `Ctrl+C` | Quit |
+
+Textual's built-in command palette is intentionally disabled -- it defaults
+to `Ctrl+P`, which collided with this app's own bindings, and its "change
+theme" command has no visible effect here since the CSS uses fixed colors
+rather than Textual's theme-variable system (a real, working theme switcher
+is planned, not built yet).
 
 ## What it explicitly does not do
 
