@@ -10,9 +10,18 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        # Every version pyproject.toml claims to support gets tested on Linux;
+        # Windows covers the ends of that range. Windows is not optional here --
+        # a cp1252 encoding bug shipped to PyPI once because CI was Linux-only.
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.10"
+          - os: windows-latest
+            python-version: "3.14"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,3 +29,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       - run: python -m pytest -q
+
+  calibration:
+    # The calibration study is the project's central claim (docs/calibration.md).
+    # This does not re-verify the published numbers -- that takes minutes -- it
+    # just guarantees the script still runs, so the claim stays reproducible.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: python scripts/calibration_study.py --trials 15 --bars 400

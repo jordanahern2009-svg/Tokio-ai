@@ -95,7 +95,9 @@ TOOLS = [
             "'does X predict what happens next'. Prefer this over "
             "test_hypothesis for anything involving raw price data; only use "
             "test_hypothesis directly when you already have two numeric "
-            "groups from elsewhere."
+            "groups from elsewhere. Uses a circular-shift randomization test, "
+            "which accounts for the fact that multi-day forward returns come "
+            "from overlapping windows and that conditions cluster in time."
         ),
         "input_schema": {
             "type": "object",
@@ -131,7 +133,7 @@ TOOLS = [
     {
         "name": "test_hypothesis",
         "description": (
-            "Run a rigorous two-sided permutation test comparing two groups of "
+            "Run a two-sided studentized permutation test comparing two groups of "
             "numbers (e.g. forward returns after a signal fires vs. a "
             "baseline). ALWAYS use this before claiming any pattern is real -- "
             "never eyeball a mean and call it significant. Enforces a minimum "

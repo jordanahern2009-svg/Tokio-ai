@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tokio-ai"
-version = "0.2.0"
+version = "0.3.0"
 description = "An open-source financial research agent that runs every claim through honest statistical testing before trusting it."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "openai>=1.50.0",
@@ -29,8 +31,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jordanahern2009-svg/Tokio-ai"
+Homepage = "https://jordanahern2009-svg.github.io/Tokio-ai/"
 Repository = "https://github.com/jordanahern2009-svg/Tokio-ai"
+Documentation = "https://github.com/jordanahern2009-svg/Tokio-ai#readme"
 Issues = "https://github.com/jordanahern2009-svg/Tokio-ai/issues"
 
 [project.scripts]

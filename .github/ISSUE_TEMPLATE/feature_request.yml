@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What research question can't you answer today
+      description: Describe the question, not the implementation. The tools here exist because a specific question was unanswerable without them.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is general-purpose research tooling, not a trading strategy, signal, or execution feature (TokIO deliberately does not pick stocks, give advice, or trade)
+          required: true

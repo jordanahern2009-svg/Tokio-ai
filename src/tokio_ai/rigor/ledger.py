@@ -46,12 +46,27 @@ class TestLedger:
                     f"MIN_SAMPLE floor -- sample too small to say anything."
                 )
             corrected = "SIGNIFICANT" if sig[i] else "NOT SIGNIFICANT"
-            return (
+            # The method is part of the verdict, not a footnote: a p-value
+            # from a studentized rotation test and one from a naive shuffled
+            # difference are not comparable numbers, and the agent quoting
+            # this line should be able to say which it has.
+            detail = (
                 f"{corrected} after correcting for {len(self.tests)} hypothesis "
                 f"test(s) run this session (raw p={t.result.p_value:.4f}, "
                 f"gap={t.result.observed_gap:+.4%}, "
-                f"reproducible with seed={t.result.seed} iters={t.result.iters})."
+                f"method={t.result.statistic}, "
+                f"reproducible with seed={t.result.seed} iters={t.result.iters})"
             )
+            if t.result.variance_ratio is not None and (
+                t.result.variance_ratio > 1.5 or t.result.variance_ratio < 1 / 1.5
+            ):
+                detail += (
+                    f". Note: the two groups have quite different variances "
+                    f"(ratio {t.result.variance_ratio:.2f}x) -- the condition is "
+                    f"selecting unusually volatile days, so a test on the raw mean "
+                    f"difference would have overstated this result"
+                )
+            return detail + "."
         raise KeyError(f"no test recorded under name {name!r}")
 
     def summary(self) -> str:

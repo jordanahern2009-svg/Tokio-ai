@@ -11,7 +11,7 @@ model decide what to ask for."
 from __future__ import annotations
 
 from ..rigor.ledger import TestLedger
-from ..rigor.stats import permutation_test
+from ..rigor.stats import circular_shift_test
 from .prices import DailyBar, fetch_daily_bars
 
 FEATURES = ("daily_return", "gap_pct", "volume_ratio")
@@ -47,11 +47,19 @@ def compute_feature(bars: list[DailyBar], feature: str) -> list[float | None]:
     raise ValueError(f"unknown feature {feature!r}, must be one of {FEATURES}")
 
 
-def bucket_forward_returns(
+def paired_forward_returns(
     bars: list[DailyBar], feature: str, op: str, threshold: float, horizon_days: int
-) -> tuple[list[float], list[float]]:
-    """Split days into (condition-met, condition-not-met) groups and return
-    each day's forward return from that day's close to horizon_days later."""
+) -> tuple[list[bool], list[float]]:
+    """Time-ordered (condition_met, forward_return) series, aligned by index.
+
+    Returns two parallel lists rather than two buckets, because the time
+    ORDER is not incidental here -- it is what makes an honest test
+    possible. Forward returns over a multi-day horizon come from
+    overlapping windows and are therefore autocorrelated, and conditions
+    cluster in time. `circular_shift_test` needs both series intact to
+    account for that; a pre-split pair of buckets has already thrown the
+    information away. See `bucket_forward_returns` for the bucketed view.
+    """
     if op not in OPS:
         raise ValueError(f"unknown op {op!r}, must be one of {list(OPS)}")
     if horizon_days <= 0:
@@ -59,14 +67,31 @@ def bucket_forward_returns(
 
     values = compute_feature(bars, feature)
     cmp = OPS[op]
-    group_a: list[float] = []  # condition met
-    group_b: list[float] = []  # condition not met
+    labels: list[bool] = []
+    forward_returns: list[float] = []
     for i, v in enumerate(values):
         exit_i = i + horizon_days
         if v is None or exit_i >= len(bars) or bars[i].close == 0:
             continue
-        forward_return = bars[exit_i].close / bars[i].close - 1
-        (group_a if cmp(v, threshold) else group_b).append(forward_return)
+        labels.append(bool(cmp(v, threshold)))
+        forward_returns.append(bars[exit_i].close / bars[i].close - 1)
+    return labels, forward_returns
+
+
+def bucket_forward_returns(
+    bars: list[DailyBar], feature: str, op: str, threshold: float, horizon_days: int
+) -> tuple[list[float], list[float]]:
+    """Split days into (condition-met, condition-not-met) groups and return
+    each day's forward return from that day's close to horizon_days later.
+
+    Kept as the bucketed view of `paired_forward_returns`. Note that testing
+    these two groups against each other with a plain shuffled permutation
+    test is NOT sound for horizon_days > 1 -- the windows overlap. Use
+    `paired_forward_returns` + `circular_shift_test` for a verdict.
+    """
+    labels, forward_returns = paired_forward_returns(bars, feature, op, threshold, horizon_days)
+    group_a = [r for flag, r in zip(labels, forward_returns) if flag]
+    group_b = [r for flag, r in zip(labels, forward_returns) if not flag]
     return group_a, group_b
 
 
@@ -80,8 +105,8 @@ def test_return_pattern(
     range_: str = "10y",
 ) -> str:
     bars = fetch_daily_bars(symbol, range_)
-    group_a, group_b = bucket_forward_returns(bars, feature, op, threshold, horizon_days)
-    result = permutation_test(group_a, group_b)
+    labels, forward_returns = paired_forward_returns(bars, feature, op, threshold, horizon_days)
+    result = circular_shift_test(labels, forward_returns)
     name = f"{symbol}_{feature}_{op}{threshold}_{horizon_days}d"
     ledger.record(name, result)
     verdict = ledger.verdict(name)

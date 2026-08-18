@@ -12,6 +12,7 @@ behave as if you never left, including for that.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -52,7 +53,7 @@ def list_chats() -> list[ChatSummary]:
     if not STORE_DIR.exists():
         return []
     summaries = []
-    for path in STORE_DIR.glob("*.json"):
+    for path in sorted(STORE_DIR.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -87,14 +88,28 @@ def save_chat(
         ],
         "usage": usage or {},
     }
-    _chat_path(chat_id).write_text(json.dumps(data, indent=2), encoding="utf-8")
+    # Write to a sibling temp file and atomically replace, rather than
+    # truncating the real file first. A crash (or a Ctrl+C) partway through
+    # a direct write leaves a half-written JSON file behind, which is a
+    # silently destroyed conversation -- list_chats() already has to skip
+    # unparseable files, which is the symptom, not the fix. os.replace is
+    # atomic on both POSIX and Windows.
+    path = _chat_path(chat_id)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def load_chat(chat_id: str) -> tuple[list[dict], TestLedger, dict]:
     data = json.loads(_chat_path(chat_id).read_text(encoding="utf-8"))
     ledger = TestLedger()
+    known = set(PermutationResult.__dataclass_fields__)
     for entry in data.get("ledger", []):
-        ledger.tests.append(RecordedTest(entry["name"], PermutationResult(**entry["result"])))
+        # Drop keys this version doesn't know about instead of raising:
+        # a chat saved by a newer TokIO should still open in an older one,
+        # and a single unexpected field shouldn't cost the whole history.
+        fields = {k: v for k, v in entry["result"].items() if k in known}
+        ledger.tests.append(RecordedTest(entry["name"], PermutationResult(**fields)))
     return data.get("messages", []), ledger, data.get("usage", {})
 
 
@@ -105,11 +120,6 @@ def delete_chat(chat_id: str) -> None:
 
 
 def _result_to_dict(result: PermutationResult) -> dict:
-    return {
-        "observed_gap": result.observed_gap,
-        "p_value": result.p_value,
-        "n_a": result.n_a,
-        "n_b": result.n_b,
-        "iters": result.iters,
-        "seed": result.seed,
-    }
+    # Derived from the dataclass fields rather than hand-listed, so adding a
+    # field to PermutationResult can't silently stop being persisted.
+    return {name: getattr(result, name) for name in PermutationResult.__dataclass_fields__}

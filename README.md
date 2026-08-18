@@ -4,6 +4,7 @@
 [![PyPI](https://img.shields.io/pypi/v/tokio-ai.svg)](https://pypi.org/project/tokio-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](pyproject.toml)
+[![calibrated](https://img.shields.io/badge/false%20positive%20rate-measured-brightgreen.svg)](docs/calibration.md)
 
 An open-source financial research agent that treats "the data supports this"
 as a claim to be tested, not a vibe to be trusted.
@@ -16,6 +17,42 @@ hypothesis you've asked it to test in the same conversation. Most AI
 stock-chat tools will confidently describe a pattern in a handful of data
 points. This one is built to tell you when it can't.
 
+## We tested the tests, and they failed
+
+Most tools that promise statistical rigor never check whether their own
+statistics work. We checked ours, by running it on thousands of simulated
+price series containing **no predictable pattern at all** and counting how
+often it claimed to find one. A test that reports `p < 0.05` should be wrong
+about 5% of the time.
+
+TokIO v0.2.0 was wrong up to **45%** of the time.
+
+Two compounding bugs, both specific to the questions this tool exists to
+answer. Conditions like "days that dropped more than 2%" select volatile
+days *by construction*, and a permutation test on a raw mean difference
+isn't valid when one group is far noisier than the other. On top of that,
+multi-day forward returns come from overlapping windows, so shuffling them
+pretends there is far more independent data than there is.
+
+v0.3.0 fixes both — a studentized statistic (Chung & Romano 2013) and a
+circular-shift randomization that preserves the time structure instead of
+destroying it. Worst-case false-positive rate went from **45% to 7%**, and the
+engine got about 7x faster, because rotations are cheap enough to
+enumerate exactly rather than sample.
+
+The most useful thing the study found was in our own README. The showcase
+example here used to be "AAPL gaps above 2% fade over the next 5 days,
+p = 0.0042." Re-run with the corrected test on the same 10 years of real
+data: **p = 0.089.** Not significant. The headline result was a false
+positive produced by the bug.
+
+**[Read the full study →](docs/calibration.md)** — or reproduce it yourself,
+no API key or network needed:
+
+```bash
+python scripts/calibration_study.py
+```
+
 ## Why this exists
 
 Generic LLM agents are commoditized -- anyone can wrap an LLM in a chat loop
@@ -24,9 +61,13 @@ and call it an agent. What isn't commoditized is discipline: most retail
 sees a gap, and calls it an edge without asking how likely that gap was to
 appear by chance. The rigor layer here (`tokio_ai.rigor`) generalizes a
 hypothesis-testing discipline actually used across real trading research
-projects -- see `rigor/stats.py` and `rigor/ledger.py` for the permutation
-test, minimum-sample gate, and Bonferroni/Benjamini-Hochberg multiple-testing
-correction that every claim has to pass through.
+projects -- see `rigor/stats.py` and `rigor/ledger.py` for the
+randomization tests, minimum-sample gate, and Bonferroni/Benjamini-Hochberg
+multiple-testing correction that every claim has to pass through.
+
+Discipline you can't verify is just a claim, though, which is why
+[`docs/calibration.md`](docs/calibration.md) measures whether any of it
+actually holds -- and reports where it didn't.
 
 ## What it can do today (v0)
 
@@ -37,10 +78,12 @@ correction that every claim has to pass through.
   stocks" without requiring you to already know a ticker or sector
 - Test whether a simple technical condition (a big daily move, a gap at the
   open, unusual volume) actually predicts what happens next -- fetches,
-  buckets, and runs the permutation test in one call, not via the model
-  eyeballing raw numbers
-- Run a rigorous two-sided permutation test comparing any two groups of
-  numbers you already have, with automatic multiple-testing correction
+  buckets, and runs the test in one call, not via the model eyeballing
+  raw numbers -- using a circular-shift randomization that accounts for
+  overlapping forward windows
+- Run a two-sided permutation test comparing any two groups of numbers you
+  already have -- studentized, so it stays honest when one group is much
+  noisier than the other -- with automatic multiple-testing correction
   across everything tested in the session
 - Chat with it via a full-screen terminal UI with a persistent sidebar (new chat, chat list, usage, settings), or a plain-text REPL (`tokio-ai-plain`); it decides when to call which tool
 - Multiple named, disk-persisted chats -- start a new one from the sidebar, click back into old ones, each keeps its own multiple-testing correction history so resuming picks up exactly where you left off
@@ -99,9 +142,13 @@ python -m tokio_ai.cli # if the tokio-ai console script isn't on PATH
 
 ## Architecture
 
-- `tokio_ai/rigor/` -- pure-Python statistics engine (permutation testing,
+- `tokio_ai/rigor/` -- pure-Python statistics engine (studentized
+  permutation testing, circular-shift randomization for time-ordered data,
   multiple-testing correction, session-level test ledger). Fully unit
-  tested, zero dependencies beyond the standard library.
+  tested, zero dependencies beyond the standard library, and its
+  false-positive rate is measured rather than assumed
+  ([`docs/calibration.md`](docs/calibration.md), reproducible via
+  `scripts/calibration_study.py`).
 - `tokio_ai/tools/` -- data ingest (Yahoo price history, SEC EDGAR filings,
   a bundled real S&P 500 + GICS sector snapshot) and the agent-facing
   screening/pattern-testing/hypothesis-testing tools.
@@ -158,13 +205,19 @@ as unreliable until there's a dedicated tool for it.
 > Test whether AAPL days that gap up more than 2% at the open tend to keep
   drifting up over the next 5 trading days, using 10 years of history.
 
-The test found a statistically significant pattern (p=0.0050 after
-correction), but in the opposite direction of the initial hypothesis. AAPL
-days with gaps >2% at the open saw an average -1.31% return over the next 5
-trading days, significantly underperforming the baseline. This suggests
-large upward gaps historically preceded short-term weakness (gap-fade), not
-momentum continuation. (data window: 2016-08-01 to 2026-07-31)
+Not significant (p=0.089). Over 2016-08-18 to 2026-08-17 there were 76 days
+with a gap above 2%, and they averaged -1.29% over the next 5 trading days
+versus baseline -- so the point estimate does lean toward gap-fade rather
+than continuation, but not by enough to separate from chance.
+
+Worth flagging: those 76 days have 2.68x the return variance of the other
+2,430. That is the condition selecting volatile days, and it is exactly the
+case where a naive test overstates significance -- this one reported
+p=0.0042 on the same data before v0.3.0.
 ```
+
+That second paragraph is the whole point of the project. The interesting
+answer was not the pattern; it was the reason to distrust the pattern.
 
 ## License
 

@@ -1,0 +1,35 @@
+name: Statistical concern
+description: You think a test, verdict, or claim in this project is wrong
+labels: ["statistics", "priority"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project exists to avoid overclaiming, so an argument that it is
+        overclaiming somewhere is the most useful issue you can file. It gets
+        triaged ahead of features.
+
+        Worth reading first: `docs/calibration.md` documents the known
+        false-positive study, the two defects it found, and the limitations
+        that are still open (cross-session multiple testing, selection bias,
+        the stationarity assumption behind the rotation null).
+  - type: textarea
+    id: claim
+    attributes:
+      label: Which claim or result do you think is wrong
+      description: Quote the verdict text, the function, or the line in the docs.
+    validations:
+      required: true
+  - type: textarea
+    id: argument
+    attributes:
+      label: Why you think it is wrong
+      description: References welcome but not required. A worked counterexample is worth more than a citation.
+    validations:
+      required: true
+  - type: textarea
+    id: demonstration
+    attributes:
+      label: Demonstration, if you have one
+      description: Ideally data (real or simulated) where the current behaviour gives a verifiably wrong answer.
+      render: python

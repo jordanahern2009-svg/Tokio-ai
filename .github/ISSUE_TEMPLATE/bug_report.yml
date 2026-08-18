@@ -1,0 +1,49 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If the bug is a **statistical** one -- a verdict
+        you believe is wrong rather than a crash -- please say so explicitly.
+        Those are the highest-value reports this project can get, and they are
+        the hardest to notice from the inside. See `docs/calibration.md` for
+        the kind of thing that has already been caught this way.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Include the exact question you asked TokIO, if it came from a chat.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A code snippet against `tokio_ai.rigor` or `tokio_ai.tools` is ideal, since it removes the LLM from the loop.
+      render: python
+  - type: input
+    id: version
+    attributes:
+      label: TokIO version
+      description: "`pip show tokio-ai`, or the commit SHA if running from source"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Python version and OS
+      placeholder: "3.12 / Windows 11"
+  - type: input
+    id: model
+    attributes:
+      label: Model and endpoint
+      description: Only relevant for agent-behaviour bugs. Leave blank for statistics or data bugs.
+      placeholder: "nvidia/llama-3.3-nemotron-super-49b-v1.5 via integrate.api.nvidia.com"

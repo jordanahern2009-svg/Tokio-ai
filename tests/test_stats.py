@@ -1,8 +1,13 @@
+import random
+
+import pytest
+
 from tokio_ai.rigor.stats import (
     MIN_SAMPLE,
     PermutationResult,
     benjamini_hochberg,
     bonferroni_correct,
+    circular_shift_test,
     permutation_test,
 )
 
@@ -69,3 +74,109 @@ def test_empty_inputs_do_not_crash():
     assert benjamini_hochberg([]) == []
     result = permutation_test([], [1.0])
     assert result.p_value == 1.0
+
+
+# --- studentization (0.3.0) -------------------------------------------------
+
+
+def test_unequal_variance_does_not_manufacture_significance():
+    """The 0.3.0 headline bug, as a regression test.
+
+    Group A is small and noisy, group B is large and quiet, and both are
+    centered on zero -- there is no real difference in means. A permutation
+    test on the RAW mean difference pools the two and concludes A's mean is
+    far more stable than it is, producing spurious significance. The
+    studentized statistic has to survive this.
+    """
+    rng = random.Random(7)
+    noisy_small = [rng.gauss(0, 5.0) for _ in range(40)]
+    quiet_large = [rng.gauss(0, 1.0) for _ in range(600)]
+    result = permutation_test(noisy_small, quiet_large, iters=2000, seed=1)
+    assert result.p_value > 0.05
+    assert result.statistic == "studentized_mean_diff"
+    assert result.variance_ratio is not None and result.variance_ratio > 4
+
+
+def test_variance_ratio_is_reported():
+    a = [1.0, -1.0] * 30       # variance 1
+    b = [2.0, -2.0] * 30       # variance 4
+    result = permutation_test(a, b, iters=200, seed=0)
+    assert result.variance_ratio == pytest.approx(0.25, rel=0.01)
+
+
+def test_zero_variance_groups_that_differ_are_maximally_extreme():
+    """Both groups constant but separated: perfect separation, not 'undefined'.
+
+    An earlier draft of the studentized statistic returned None when the
+    denominator was zero, which scored this case at p=1.0 -- the exact
+    inverse of the truth.
+    """
+    result = permutation_test([1.0] * 30, [0.0] * 30, iters=2000, seed=1)
+    assert result.p_value < 0.01
+
+
+def test_zero_variance_identical_groups_are_not_significant():
+    result = permutation_test([1.0] * 30, [1.0] * 30, iters=500, seed=1)
+    assert result.p_value > 0.5
+
+
+# --- circular-shift randomization (0.3.0) -----------------------------------
+
+
+def test_circular_shift_rejects_mismatched_lengths():
+    with pytest.raises(ValueError, match="same length"):
+        circular_shift_test([True, False], [1.0], iters=100)
+
+
+def test_circular_shift_rejects_nonpositive_iters():
+    with pytest.raises(ValueError, match="iters must be positive"):
+        circular_shift_test([True, False], [1.0, 2.0], iters=0)
+
+
+def test_circular_shift_handles_single_class_labels():
+    for labels in ([True] * 50, [False] * 50):
+        result = circular_shift_test(labels, [float(i) for i in range(50)], iters=100)
+        assert result.p_value == 1.0
+
+
+def test_circular_shift_p_value_is_exact_when_all_rotations_enumerated():
+    """With n <= iters every distinct rotation is evaluated, so the p-value is
+    an exact fraction over n -- and can never be zero, since the identity
+    rotation always counts itself."""
+    n = 200
+    rng = random.Random(3)
+    values = [rng.gauss(0, 1) for _ in range(n)]
+    labels = [i % 5 == 0 for i in range(n)]
+    result = circular_shift_test(labels, values, iters=5000, seed=0)
+    assert result.iters == n
+    assert result.p_value >= 1 / n
+    assert (result.p_value * n) == pytest.approx(round(result.p_value * n))
+
+
+def test_circular_shift_finds_a_real_planted_effect():
+    """Calibration must not come at the cost of never detecting anything."""
+    rng = random.Random(11)
+    labels, values = [], []
+    for i in range(400):
+        flag = i % 7 == 0
+        labels.append(flag)
+        values.append(rng.gauss(0.9 if flag else 0.0, 0.5))
+    assert circular_shift_test(labels, values, iters=5000, seed=0).p_value < 0.01
+
+
+def test_circular_shift_is_not_fooled_by_clustered_labels_on_autocorrelated_values():
+    """The overlap defect, as a regression test.
+
+    `values` is a slow random walk (strongly autocorrelated, like overlapping
+    forward returns) and `labels` mark one contiguous block (clustered in
+    time, like a volatility burst). There is no relationship between the two
+    beyond each one's own internal structure, but a shuffled label test
+    reliably calls this significant. Rotation must not.
+    """
+    rng = random.Random(5)
+    values, level = [], 0.0
+    for _ in range(600):
+        level += rng.gauss(0, 1)
+        values.append(level)
+    labels = [140 <= i < 200 for i in range(600)]
+    assert circular_shift_test(labels, values, iters=5000, seed=0).p_value > 0.05
