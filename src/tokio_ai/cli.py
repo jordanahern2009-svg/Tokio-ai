@@ -6,10 +6,12 @@ import os
 import sys
 
 from ._env import load_env_file
+from ._stdio import force_utf8_stdio
 from .agent.loop import Agent
 
 
 def main() -> None:
+    force_utf8_stdio()
     load_env_file()
 
     if not os.environ.get("OPENAI_API_KEY"):

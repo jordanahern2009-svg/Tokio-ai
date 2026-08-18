@@ -43,6 +43,22 @@ causes, both specific to what this tool is for:
 
 Also fixed, unrelated to the above:
 
+- **The plain REPL crashed on Windows whenever a reply contained a
+  character outside the console codepage** — an arrow, an en dash, a
+  "greater than or equal" sign, all routine in model output. `print()`
+  raised `UnicodeEncodeError`, and in `cli.py` that call sits outside the
+  try/except around the API call, so one punctuation mark ended the session
+  and lost the conversation. Both entry points now force UTF-8 stdio with
+  `errors="replace"`. Found by running the agent for real, not by reading
+  the code; this is the third time this project's default-codepage
+  assumption has caused a bug.
+- **The provenance stamp reported the installed version, not the running
+  one.** With a source tree ahead of the last `pip install` — the normal
+  state while developing — verdicts were stamped with a version of the code
+  that did not produce them, which defeats the point of stamping them. Now
+  reports the running `__version__`, noting the installed version when they
+  disagree.
+
 - **Chat saves are now atomic.** `save_chat` truncated the real file before
   writing, so a crash or Ctrl+C mid-save destroyed the conversation.
   Writes to a temp file and `os.replace`s it. (`list_chats` already had to

@@ -30,6 +30,7 @@ from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, S
 
 from . import chat_store
 from ._env import load_env_file
+from ._stdio import force_utf8_stdio
 from .agent.loop import Agent, PERMISSION_LEVELS
 from .rigor.ledger import TestLedger
 
@@ -427,6 +428,7 @@ class TokioApp(App):
 
 
 def main() -> None:
+    force_utf8_stdio()
     load_env_file()
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY not set. Put it in .env or export it before running.", file=sys.stderr)

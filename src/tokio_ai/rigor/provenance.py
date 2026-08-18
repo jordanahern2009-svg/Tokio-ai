@@ -8,10 +8,21 @@ from importlib.metadata import PackageNotFoundError, version
 
 
 def stamp() -> str:
+    # The running module's own __version__ is authoritative, NOT the
+    # installed distribution metadata. Those disagree whenever the source
+    # tree is ahead of the last `pip install` -- which is the normal state
+    # while developing, and exactly when a result is most likely to be
+    # pasted somewhere. Reporting the installed version there would stamp a
+    # result with a version of the code that did not produce it, which
+    # defeats the only reason this function exists.
+    from .. import __version__ as tokio_version
+
     try:
-        tokio_version = version("tokio-ai")
+        installed = version("tokio-ai")
     except PackageNotFoundError:
-        from .. import __version__ as tokio_version  # editable/dev install fallback
+        installed = None
+    if installed is not None and installed != tokio_version:
+        tokio_version = f"{tokio_version} (source; {installed} installed)"
 
     try:
         openai_version = version("openai")
