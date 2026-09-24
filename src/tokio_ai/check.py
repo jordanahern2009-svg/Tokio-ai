@@ -19,12 +19,15 @@ from __future__ import annotations
 import math
 import statistics
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .rigor.ledger import TestLedger
 from .rigor.provenance import stamp
+from .rigor.overlap import hodrick_test
 from .rigor.stats import MIN_SAMPLE, circular_shift_test
+
+METHODS = ("hodrick", "rotation")
 
 # Mirrors the ledger's threshold for flagging unequal variances, so the
 # library and the agent say the same thing about the same data.
@@ -50,6 +53,11 @@ class CheckResult:
     iters: int
     seed: int | None
     provenance: str
+    # Both engines run on every check; `p_value` is the chosen method's.
+    # When they disagree about significance, that disagreement is itself
+    # information -- see __str__.
+    p_hodrick: float = math.nan
+    p_rotation: float = math.nan
 
     @property
     def significant(self) -> bool:
@@ -58,6 +66,32 @@ class CheckResult:
     @property
     def gap(self) -> float:
         return self.mean_condition - self.mean_other
+
+    def _second_opinion(self) -> str | None:
+        """One line when the two engines land on opposite sides of alpha.
+
+        They test slightly different nulls. The Hodrick test assumes the
+        one-bar returns have only short-range autocorrelation; the rotation
+        test assumes nothing about it, but is less powerful when a
+        persistent condition carries a short-horizon edge. So a split
+        verdict says which assumption the result depends on.
+        """
+        if math.isnan(self.p_hodrick) or math.isnan(self.p_rotation):
+            return None
+        if (self.p_hodrick <= self.alpha) == (self.p_rotation <= self.alpha):
+            return None
+        if self.p_hodrick <= self.alpha:
+            return (
+                f"Second opinion disagrees: the assumption-free rotation test gives "
+                f"p={self.p_rotation:.4f}. The evidence rests on the one-bar returns having "
+                f"only short-range autocorrelation (typical for daily bars), or on a "
+                f"persistent condition, where the rotation test is known to be weaker."
+            )
+        return (
+            f"Second opinion disagrees: the rotation test gives p={self.p_rotation:.4f}, "
+            f"which the Hodrick test (p={self.p_hodrick:.4f}) does not confirm. Treat as "
+            f"borderline."
+        )
 
     def __str__(self) -> str:
         h = f"{self.horizon} bar" + ("s" if self.horizon != 1 else "")
@@ -79,6 +113,10 @@ class CheckResult:
                 f"{self.n_other} (gap {self.gap:+.3%})."
             )
         lines = [head]
+        if self.verdict != "NOT REPORTABLE":
+            other = self._second_opinion()
+            if other:
+                lines.append(other)
         vr = self.variance_ratio
         if vr is not None and (vr > _VARIANCE_FLAG or vr < 1 / _VARIANCE_FLAG):
             if vr > 1:
@@ -93,9 +131,11 @@ class CheckResult:
                 f"Unequal variances: {which}. Here, a test that pools the variances "
                 f"{bias} significance; this test accounts for it."
             )
-        lines.append(
-            f"[{self.method}, iters={self.iters}, seed={self.seed} | {self.provenance}]"
-        )
+        if self.method == "hodrick_hac":
+            engine = f"hodrick_hac; second opinion circular_shift over {self.iters} rotations, seed={self.seed}"
+        else:
+            engine = f"{self.method}, iters={self.iters}, seed={self.seed}; second opinion hodrick_hac"
+        lines.append(f"[{engine} | {self.provenance}]")
         return "\n".join(lines)
 
 
@@ -145,6 +185,70 @@ def forward_returns(returns: list[float | None], horizon: int) -> list[float | N
     return out
 
 
+def _prepare_python(returns, condition, horizon):
+    r = [None if _is_missing(x) else float(x) for x in returns]
+    c = [None if _is_missing(x) else bool(x) for x in condition]
+    fwd = forward_returns(r, horizon)
+    labels: list[bool] = []
+    values: list[float] = []
+    for flag, v in zip(c, fwd):
+        if flag is None or v is None:
+            continue
+        labels.append(flag)
+        values.append(v)
+    group_a = [v for flag, v in zip(labels, values) if flag]
+    group_b = [v for flag, v in zip(labels, values) if not flag]
+    mean_a = statistics.fmean(group_a) if group_a else math.nan
+    mean_b = statistics.fmean(group_b) if group_b else math.nan
+    return labels, values, mean_a, mean_b
+
+
+def _prepare_numpy(returns, condition, horizon):
+    """Vectorized twin of _prepare_python; None means "use that instead".
+
+    Same semantics: None/NaN are missing, any nonzero condition value is
+    True, and the outcome for bar i compounds bars i+1..i+horizon. At a
+    million bars the element-by-element version costs several seconds
+    before the test itself even starts.
+    """
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    try:
+        r = np.asarray(returns, dtype=float)
+        c = np.asarray(condition, dtype=float)  # True->1, False->0, None/NaN->nan
+    except (TypeError, ValueError):
+        return None
+    if r.ndim != 1 or c.ndim != 1:
+        return None
+    # A return of -100% or worse has no logarithm; the product form in
+    # forward_returns handles it, so let it.
+    if np.any(r[~np.isnan(r)] <= -1.0):
+        return None
+
+    n = len(r)
+    missing = np.isnan(r)
+    # Forward return via differences of cumulative log-growth -- O(n) for any
+    # horizon. A window touching a missing bar is itself missing, tracked by
+    # a cumulative count of missing bars rather than letting NaN poison
+    # every later cumulative sum.
+    logs = np.concatenate([[0.0], np.cumsum(np.where(missing, 0.0, np.log1p(np.where(missing, 0.0, r))))])
+    gaps = np.concatenate([[0], np.cumsum(missing)])
+    fwd = np.full(n, np.nan)
+    if n > horizon:
+        i = np.arange(n - horizon)
+        growth = np.expm1(logs[i + 1 + horizon] - logs[i + 1])
+        fwd[i] = np.where(gaps[i + 1 + horizon] - gaps[i + 1] > 0, np.nan, growth)
+
+    keep = ~np.isnan(c) & ~np.isnan(fwd)
+    labels = c[keep] != 0
+    values = fwd[keep]
+    mean_a = float(values[labels].mean()) if labels.any() else math.nan
+    mean_b = float(values[~labels].mean()) if (~labels).any() else math.nan
+    return labels, values, mean_a, mean_b
+
+
 def check(
     returns: Iterable[Any],
     condition: Iterable[Any],
@@ -155,6 +259,7 @@ def check(
     seed: int | None = 0,
     ledger: TestLedger | None = None,
     name: str | None = None,
+    method: str = "hodrick",
 ) -> CheckResult:
     """Does `condition` at bar i predict the return over the next `horizon` bars?
 
@@ -166,12 +271,22 @@ def check(
     from shifted series with `.where(shifted.notna())` to keep "unknown"
     distinct from "no".
 
-    The test is a studentized circular-shift randomization: it rotates the
-    condition series against the outcome series, which keeps the time
-    structure of both (volatility clustering, overlapping multi-bar
-    windows) intact. Plain t-tests and shuffle tests destroy that structure
-    and were measured calling noise significant up to 45% of the time on
-    realistic data; see docs/calibration.md.
+    Two engines run on every call; `method` picks which one's p-value is the
+    verdict, and the other is reported as a second opinion.
+
+    - "hodrick" (default): Hodrick (1992) standard errors, which handle the
+      overlap between multi-bar windows exactly instead of estimating it,
+      plus a short HAC for the returns' own autocorrelation. See
+      `rigor/overlap.py`.
+    - "rotation": a studentized circular-shift randomization, which rotates
+      the condition against the outcome and keeps the time structure of both
+      intact. It assumes nothing about return autocorrelation, and is less
+      powerful for a persistent condition at a short horizon.
+
+    Both were benchmarked against Newey-West and a stationary block
+    bootstrap on 51 simulated null markets; the Hodrick engine had the
+    lowest worst-case false-positive rate of the tests measured, at
+    Newey-West's power. Plain t-tests reached 64%. See docs/calibration.md.
 
     Pass a `TestLedger` as `ledger` when checking several conditions on the
     same data, and every verdict is Benjamini-Hochberg corrected against all
@@ -182,27 +297,34 @@ def check(
         raise ValueError(f"horizon must be at least 1, got {horizon!r}")
     if not 0 < alpha < 1:
         raise ValueError(f"alpha must be between 0 and 1, got {alpha!r}")
+    if method not in METHODS:
+        raise ValueError(f"method must be one of {METHODS}, got {method!r}")
     _aligned(returns, condition)
 
-    r = [None if _is_missing(x) else float(x) for x in returns]
-    c = [None if _is_missing(x) else bool(x) for x in condition]
-    if len(r) != len(c):
-        raise ValueError(f"returns and condition must be the same length, got {len(r)} and {len(c)}")
+    # Materialize one-shot iterables once, so a failed fast-path conversion
+    # can't leave the fallback with an exhausted generator.
+    if not hasattr(returns, "__len__"):
+        returns = list(returns)
+    if not hasattr(condition, "__len__"):
+        condition = list(condition)
+    if len(returns) != len(condition):
+        raise ValueError(
+            f"returns and condition must be the same length, got {len(returns)} and {len(condition)}"
+        )
 
-    fwd = forward_returns(r, horizon)
-    labels: list[bool] = []
-    values: list[float] = []
-    for flag, v in zip(c, fwd):
-        if flag is None or v is None:
-            continue
-        labels.append(flag)
-        values.append(v)
+    prepared = _prepare_numpy(returns, condition, horizon)
+    if prepared is None:
+        prepared = _prepare_python(returns, condition, horizon)
+    labels, values, mean_a, mean_b = prepared
 
-    result = circular_shift_test(labels, values, iters=iters, seed=seed)
-    group_a = [v for flag, v in zip(labels, values) if flag]
-    group_b = [v for flag, v in zip(labels, values) if not flag]
-    mean_a = statistics.fmean(group_a) if group_a else math.nan
-    mean_b = statistics.fmean(group_b) if group_b else math.nan
+    rotation = circular_shift_test(labels, values, iters=iters, seed=seed)
+    p_hodrick = hodrick_test(returns, condition, horizon).p_value
+    if method == "hodrick":
+        # The ledger stores PermutationResults; the sample sizes and gap are
+        # shared, only the p-value and its provenance differ.
+        result = replace(rotation, p_value=p_hodrick, statistic="hodrick_hac")
+    else:
+        result = rotation
 
     if ledger is not None:
         ledger.record(name or f"check_{len(ledger.tests) + 1}_h{horizon}", result)
@@ -234,4 +356,6 @@ def check(
         iters=result.iters,
         seed=result.seed,
         provenance=stamp(),
+        p_hodrick=p_hodrick,
+        p_rotation=rotation.p_value,
     )

@@ -180,3 +180,70 @@ def test_circular_shift_is_not_fooled_by_clustered_labels_on_autocorrelated_valu
         values.append(level)
     labels = [140 <= i < 200 for i in range(600)]
     assert circular_shift_test(labels, values, iters=5000, seed=0).p_value > 0.05
+
+
+# --- FFT all-rotation fast path (0.4.0) -------------------------------------
+
+def _brute_force(labels, values, monkeypatch):
+    import tokio_ai.rigor.stats as stats_mod
+
+    monkeypatch.setattr(stats_mod, "_numpy", lambda: None)
+    return circular_shift_test(labels, values, iters=len(values) + 1)
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_fft_path_matches_exhaustive_loop_exactly(seed, monkeypatch):
+    pytest.importorskip("numpy")
+    rng = random.Random(seed)
+    n = rng.randrange(80, 400)
+    labels = [rng.random() < rng.choice([0.05, 0.3, 0.6]) for _ in range(n)]
+    values = [rng.gauss(0, 1) * (3 if rng.random() < 0.1 else 1) for _ in range(n)]
+    fast = circular_shift_test(labels, values, iters=len(values) + 1)
+    slow = _brute_force(labels, values, monkeypatch)
+    assert fast.p_value == slow.p_value
+    assert fast.iters == slow.iters == n
+
+
+def test_fft_path_handles_heavy_ties(monkeypatch):
+    # Discrete values make many rotations tie the observed statistic
+    # exactly -- the case where floating-point route differences bite.
+    pytest.importorskip("numpy")
+    rng = random.Random(5)
+    labels = [rng.random() < 0.3 for _ in range(300)]
+    values = [float(rng.choice([-1, 0, 1])) for _ in range(300)]
+    fast = circular_shift_test(labels, values, iters=301)
+    slow = _brute_force(labels, values, monkeypatch)
+    assert fast.p_value == slow.p_value
+
+
+def test_fft_path_survives_a_large_offset(monkeypatch):
+    # Prices-scale values with tiny differences: cancellation territory.
+    pytest.importorskip("numpy")
+    rng = random.Random(9)
+    labels = [rng.random() < 0.2 for _ in range(250)]
+    values = [1e4 + rng.gauss(0, 1e-3) for _ in range(250)]
+    fast = circular_shift_test(labels, values, iters=251)
+    slow = _brute_force(labels, values, monkeypatch)
+    assert fast.p_value == pytest.approx(slow.p_value, abs=2 / 250)
+
+
+def test_fft_path_perfect_separation_is_maximally_extreme(monkeypatch):
+    pytest.importorskip("numpy")
+    labels = [i % 10 == 0 for i in range(200)]
+    values = [1.0 if flag else 0.0 for flag in labels]
+    # Zero spread in both groups, so the statistic is infinite. Every
+    # rotation by a multiple of the period (200 / 10 = 20 of them) lines the
+    # 1s up again and is exactly as extreme; nothing else comes close.
+    result = circular_shift_test(labels, values)
+    assert result.p_value == pytest.approx(20 / 200)
+    assert result.p_value == _brute_force(labels, values, monkeypatch).p_value
+
+
+def test_fft_path_is_exact_beyond_iters():
+    # With numpy, n > iters no longer falls back to Monte Carlo sampling.
+    pytest.importorskip("numpy")
+    rng = random.Random(2)
+    labels = [rng.random() < 0.2 for _ in range(3000)]
+    values = [rng.gauss(0, 1) for _ in range(3000)]
+    result = circular_shift_test(labels, values, iters=500)
+    assert result.iters == 3000

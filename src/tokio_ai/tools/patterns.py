@@ -10,8 +10,8 @@ model decide what to ask for."
 
 from __future__ import annotations
 
+from ..check import check
 from ..rigor.ledger import TestLedger
-from ..rigor.stats import circular_shift_test
 from .prices import DailyBar, fetch_daily_bars
 
 FEATURES = ("daily_return", "gap_pct", "volume_ratio")
@@ -104,12 +104,24 @@ def test_return_pattern(
     horizon_days: int,
     range_: str = "10y",
 ) -> str:
+    if op not in OPS:
+        raise ValueError(f"unknown op {op!r}, must be one of {list(OPS)}")
     bars = fetch_daily_bars(symbol, range_)
-    labels, forward_returns = paired_forward_returns(bars, feature, op, threshold, horizon_days)
-    result = circular_shift_test(labels, forward_returns)
+    # Route through check() so the agent and the library give the same
+    # answer to the same question. Bar returns close-to-close, and the
+    # condition at each bar's close; check() compounds bars i+1..i+h,
+    # which is exactly close[i+h] / close[i] - 1.
+    returns: list[float | None] = [None] + [
+        (cur.close / prev.close - 1) if prev.close else None for prev, cur in zip(bars, bars[1:])
+    ]
+    cmp = OPS[op]
+    condition = [None if v is None else bool(cmp(v, threshold)) for v in compute_feature(bars, feature)]
     name = f"{symbol}_{feature}_{op}{threshold}_{horizon_days}d"
-    ledger.record(name, result)
+    result = check(returns, condition, horizon=horizon_days, ledger=ledger, name=name)
     verdict = ledger.verdict(name)
+    second = result._second_opinion()
+    if second:
+        verdict += " " + second
     # The model has no reliable notion of "today" or the actual data window
     # fetched -- hand it the real dates so it reports facts, not a guess.
     data_window = f"data window: {bars[0].date} to {bars[-1].date}" if bars else "no data"

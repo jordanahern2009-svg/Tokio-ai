@@ -159,7 +159,7 @@ def test_str_reports_the_numbers_and_the_method():
     text = str(result)
     assert result.verdict in text
     assert "next 5 bars" in text
-    assert "circular_shift" in text
+    assert "hodrick_hac" in text and "circular_shift" in text
     assert "tokio-ai" in text
 
 
@@ -235,3 +235,138 @@ def test_variance_note_small_calm_group_understates():
 
 def test_no_variance_note_when_variances_are_close():
     assert "Unequal variances" not in str(_result(100, 900, 1.2))
+
+
+# --- numpy fast path must agree with the pure-Python reference -------------
+
+@pytest.mark.parametrize("seed", range(6))
+@pytest.mark.parametrize("horizon", [1, 5, 20])
+def test_numpy_prepare_matches_python_prepare(seed, horizon):
+    pytest.importorskip("numpy")
+    from tokio_ai.check import _prepare_numpy, _prepare_python
+
+    rng = random.Random(seed)
+    r = [rng.gauss(0, 0.02) for _ in range(600)]
+    cond = [rng.random() < 0.3 for _ in range(600)]
+    for i in rng.sample(range(600), 25):  # scattered gaps in both series
+        r[i] = math.nan if i % 2 else None
+    for i in rng.sample(range(600), 25):
+        cond[i] = math.nan if i % 2 else None
+    fast = _prepare_numpy(r, cond, horizon)
+    slow = _prepare_python(r, cond, horizon)
+    assert list(fast[0]) == slow[0]
+    assert list(fast[1]) == pytest.approx(slow[1], rel=1e-9, abs=1e-12)
+    assert fast[2] == pytest.approx(slow[2]) and fast[3] == pytest.approx(slow[3])
+
+
+def test_total_loss_return_falls_back_to_the_exact_path():
+    pytest.importorskip("numpy")
+    from tokio_ai.check import _prepare_numpy
+
+    r = _noise(200, seed=3)
+    r[50] = -1.0
+    assert _prepare_numpy(r, [i % 3 == 0 for i in range(200)], 5) is None
+    result = check(r, [i % 3 == 0 for i in range(200)], horizon=5)
+    assert result.n_condition > 0
+
+
+def test_check_agrees_with_and_without_numpy(monkeypatch):
+    pytest.importorskip("numpy")
+    import sys
+
+    import tokio_ai.rigor.stats as stats_mod
+
+    # `tokio_ai.check` is the function (re-exported by the package), which
+    # shadows the submodule of the same name for attribute-style imports.
+    check_mod = sys.modules["tokio_ai.check"]
+
+    rng = random.Random(44)
+    r = _noise(700, seed=44)
+    cond = [rng.random() < 0.25 for _ in range(700)]
+    fast = check(r, cond, horizon=5, iters=701)
+    monkeypatch.setattr(check_mod, "_prepare_numpy", lambda *a: None)
+    monkeypatch.setattr(stats_mod, "_numpy", lambda: None)
+    slow = check(r, cond, horizon=5, iters=701)
+    assert fast.p_value == slow.p_value
+    assert fast.gap == pytest.approx(slow.gap)
+    assert fast.variance_ratio == pytest.approx(slow.variance_ratio)
+
+
+def test_pandas_where_object_condition_takes_the_fast_path():
+    pd = pytest.importorskip("pandas")
+    from tokio_ai.check import _prepare_numpy
+
+    prices = pd.Series([100 + i * 0.1 + (i % 5) for i in range(300)])
+    past = prices.shift(20)
+    cond = (prices > past).where(past.notna())  # object dtype: True/False/NaN
+    out = _prepare_numpy(prices.pct_change(), cond, 5)
+    assert out is not None
+    assert len(out[0]) == 300 - 20 - 5
+
+
+# --- two engines: Hodrick (default) and rotation ----------------------------
+
+def test_default_method_is_hodrick_and_rotation_is_reported_too():
+    rng = random.Random(9101)
+    r = _noise(800, seed=101)
+    cond = [rng.random() < 0.3 for _ in range(800)]
+    res = check(r, cond, horizon=5)
+    assert res.method == "hodrick_hac"
+    assert res.p_value == res.p_hodrick
+    assert 0 < res.p_rotation <= 1
+
+
+def test_rotation_method_uses_the_rotation_p_value():
+    rng = random.Random(9102)
+    r = _noise(800, seed=102)
+    cond = [rng.random() < 0.3 for _ in range(800)]
+    res = check(r, cond, horizon=5, method="rotation")
+    assert res.method == "circular_shift"
+    assert res.p_value == res.p_rotation
+
+
+def test_unknown_method_raises():
+    with pytest.raises(ValueError, match="method"):
+        check([0.0] * 50, [True] * 50, method="t-test")
+
+
+def test_hodrick_finds_a_persistent_short_horizon_edge_the_rotation_misses():
+    # The case the Hodrick engine was adopted for: a condition that persists
+    # for weeks, carrying a next-bar edge. Rotations a few bars off the truth
+    # still line up with the edge, which drains the rotation test's power.
+    rng = random.Random(9103)
+    n = 3000
+    r = _noise(n, seed=103)
+    state, cond = False, []
+    for _ in range(n):
+        if rng.random() < 1 / 40:
+            state = not state
+        cond.append(state)
+    for i in range(n - 1):
+        if cond[i]:
+            r[i + 1] += 0.0012
+    res = check(r, cond, horizon=1)
+    assert res.p_hodrick < 0.01
+    assert res.p_rotation > res.p_hodrick
+
+
+def test_second_opinion_line_only_when_the_engines_split():
+    base = dict(
+        verdict="SIGNIFICANT", p_value=0.01, horizon=1, n_condition=500, n_other=500,
+        mean_condition=0.0, mean_other=0.0, variance_ratio=1.0, alpha=0.05,
+        tests_corrected_for=1, method="hodrick_hac", iters=1000, seed=0, provenance="test",
+    )
+    split = CheckResult(**base, p_hodrick=0.01, p_rotation=0.30)
+    agree = CheckResult(**base, p_hodrick=0.01, p_rotation=0.02)
+    assert "Second opinion disagrees" in str(split)
+    assert "p=0.3000" in str(split)
+    assert "Second opinion" not in str(agree)
+
+
+def test_ledger_records_the_primary_engine():
+    rng = random.Random(9104)
+    r = _noise(600, seed=104)
+    ledger = TestLedger()
+    res = check(r, [rng.random() < 0.3 for _ in range(600)], ledger=ledger)
+    assert ledger.tests[-1].result.p_value == res.p_hodrick
+    assert ledger.tests[-1].result.statistic == "hodrick_hac"

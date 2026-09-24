@@ -194,6 +194,110 @@ def benjamini_hochberg(p_values: list[float], alpha: float = 0.05) -> list[bool]
     return significant
 
 
+# Relative slack when comparing a rotation's statistic to the observed one.
+# The observed rotation must always count as "at least as extreme" as
+# itself, and the FFT path computes it through a different floating-point
+# route than the direct sum -- without slack, rounding can drop the identity
+# from the count and report a p-value below the smallest honest one.
+_TIE_RTOL = 1e-9
+
+
+def _at_least_as_extreme(t: float, observed: float) -> bool:
+    return abs(t) >= abs(observed) * (1 - _TIE_RTOL)
+
+
+def _numpy():
+    """numpy if installed, else None. One seam, so tests can force the
+    pure-Python reference path and compare the two."""
+    try:
+        import numpy
+    except ImportError:
+        return None
+    return numpy
+
+
+def _fft_rotation_hits(np, a, centered, n_a, n_b, total_sum, total_sumsq, observed_t) -> int:
+    """Count rotations at least as extreme as the observed one -- all n of
+    them, in O(n log n).
+
+    Group A's sum under shift s is sum_k a[k] * v[k - s] for the 0/1
+    condition indicator a: a circular cross-correlation, which the FFT
+    computes for every s at once (likewise the sum of squares, with v^2 in
+    place of v). The pure-Python loop costs O(n * n_a) for the same answer,
+    which at a million bars means hours.
+
+    The FFT runs at a padded power-of-two length and the result is folded
+    back to length n. A length-n FFT would give the circular correlation
+    directly, but n is whatever the user's data happens to be, and a length
+    with a large prime factor (999,995 = 5 x 199,999) sends the FFT down a
+    path several times slower. Padding to L >= 2n makes the correlation
+    linear, and circular[s] = linear[s] + linear[s - n] recovers it exactly.
+    """
+    n = len(centered)
+    size = 1 << (2 * n - 1).bit_length()
+    fa = np.fft.rfft(a, size)
+
+    def circular_corr(x):
+        full = np.fft.irfft(fa * np.conj(np.fft.rfft(x, size)), size)
+        return full[:n] + full[size - n :]
+
+    sum_a = circular_corr(centered)
+    sumsq_a = circular_corr(centered * centered)
+    sum_b = total_sum - sum_a
+    sumsq_b = total_sumsq - sumsq_a
+
+    var_a = np.maximum((sumsq_a - sum_a * sum_a / n_a) / (n_a - 1), 0.0)
+    var_b = np.maximum((sumsq_b - sum_b * sum_b / n_b) / (n_b - 1), 0.0)
+    diff = sum_a / n_a - sum_b / n_b
+    denom = np.sqrt(var_a / n_a + var_b / n_b)
+    # Zero spread in both groups: as in _welch_t, a perfect separation is
+    # infinitely extreme, not "no evidence". After FFT rounding, "zero" has
+    # to be a tolerance scaled to the data rather than an exact comparison.
+    scale = max(1.0, float(np.sqrt(total_sumsq / n)))
+    flat = denom <= 1e-12 * scale
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = np.where(flat, 0.0, diff / np.where(flat, 1.0, denom))
+    t = np.where(flat & (np.abs(diff) > 1e-12 * scale), np.inf, np.abs(t))
+    return int(np.count_nonzero(t >= abs(observed_t) * (1 - _TIE_RTOL)))
+
+
+def _circular_shift_numpy(np, labels, values, seed) -> PermutationResult:
+    a = np.asarray(labels, dtype=bool)
+    v = np.asarray(values, dtype=float)
+    n = len(v)
+    n_a = int(a.sum())
+    n_b = n - n_a
+    if n_a == 0 or n_b == 0:
+        return PermutationResult(0.0, 1.0, n_a, n_b, n, seed, statistic="circular_shift")
+
+    group_a, group_b = v[a], v[~a]
+    observed_gap = float(group_a.mean() - group_b.mean())
+    var_ratio: float | None = None
+    if n_a >= 2 and n_b >= 2:
+        var_b_raw = float(group_b.var(ddof=1))
+        var_ratio = float(group_a.var(ddof=1)) / var_b_raw if var_b_raw else None
+
+    centered = v - v.mean()
+    total_sum = float(centered.sum())
+    total_sumsq = float((centered * centered).sum())
+    ca = centered[a]
+    sum_a0 = float(ca.sum())
+    sumsq_a0 = float((ca * ca).sum())
+    observed_t = _welch_t(sum_a0, sumsq_a0, n_a, total_sum - sum_a0, total_sumsq - sumsq_a0, n_b)
+    if observed_t is None:
+        return PermutationResult(
+            observed_gap, 1.0, n_a, n_b, n, seed,
+            statistic="circular_shift", variance_ratio=var_ratio,
+        )
+    hits = _fft_rotation_hits(np, a.astype(float), centered, n_a, n_b, total_sum, total_sumsq, observed_t)
+    # The identity rotation is in the count, so hits >= 1 and the p-value
+    # can never be zero.
+    return PermutationResult(
+        observed_gap, hits / n, n_a, n_b, n, seed,
+        statistic="circular_shift", variance_ratio=var_ratio,
+    )
+
+
 def circular_shift_test(
     labels: list[bool], values: list[float], iters: int = 5000, seed: int | None = 0
 ) -> PermutationResult:
@@ -220,12 +324,13 @@ def circular_shift_test(
     internal structure explains? Every rotation is an equally likely
     relabeling under that null.
 
-    Because a rotation is cheap to evaluate (only the condition-met
-    positions move, and they are typically a small fraction of all days),
-    all `n` distinct rotations are enumerated when `n <= iters`, which makes
-    the p-value *exact* rather than Monte Carlo. The identity rotation is
-    included in the count, which is where the usual plus-one comes from
-    here.
+    With numpy installed, all `n` distinct rotations are evaluated at once
+    through an FFT (see `_fft_rotation_hits`), so the p-value is *exact* at
+    any n and `iters` is unused. Without numpy, a pure-Python loop
+    enumerates all rotations when `n <= iters` (exact) and samples `iters`
+    of them otherwise (Monte Carlo). The loop is the reference that the FFT
+    path is tested against. The identity rotation is included in the count
+    either way, which is where the usual plus-one comes from here.
 
     The statistic is the same studentized Welch difference used by
     `permutation_test` -- see there for why it is not the raw mean gap.
@@ -234,6 +339,12 @@ def circular_shift_test(
         raise ValueError(f"iters must be positive, got {iters!r}")
     if len(labels) != len(values):
         raise ValueError(f"labels and values must be the same length, got {len(labels)} and {len(values)}")
+
+    np = _numpy()
+    if np is not None:
+        # Exact over every rotation at any n. `iters` is then unused; the
+        # result's `iters` field reports the n rotations actually counted.
+        return _circular_shift_numpy(np, labels, values, seed)
 
     n = len(values)
     true_idx = [i for i, flag in enumerate(labels) if flag]
@@ -281,11 +392,10 @@ def circular_shift_test(
         shifts = [0] + [rng.randrange(1, n) for _ in range(iters - 1)]
         exact = False
 
-    target = abs(observed_t)
     hits = 0
     for s in shifts:
         t = t_at(s)
-        if t is not None and abs(t) >= target:
+        if t is not None and _at_least_as_extreme(t, observed_t):
             hits += 1
 
     total = n if exact else iters

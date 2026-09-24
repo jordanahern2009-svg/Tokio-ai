@@ -42,8 +42,9 @@ tokio-ai-plain = "tokio_ai.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-# Only for scripts/calibration_check.py, which compares against scipy's t-test.
-calibration = ["scipy"]
+# Only for the comparison scripts (calibration_check.py, benchmark.py), which
+# run the tests TokIO is measured against.
+calibration = ["scipy", "statsmodels", "arch"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tokio_ai"]

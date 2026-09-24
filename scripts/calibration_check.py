@@ -11,10 +11,14 @@ conditions, so it has to hold on more than that. This study adds:
                         true or false for weeks at a time. That is the
                         hardest case for a rotation test, because there are
                         few genuinely independent label runs to rotate.
+  * autocorrelated returns -- AR(1) at -0.25 (bid-ask bounce) and +0.15
+                        (trend), tested with a condition independent of the
+                        returns. This is the case the Hodrick engine's
+                        short HAC exists for.
 
-Every generator is conditionally mean-zero: no condition computed from the
-past can predict the future, so every SIGNIFICANT verdict is a false
-positive. A calibrated test fires about 5% of the time.
+In every row the condition carries no information about future returns, so
+every SIGNIFICANT verdict is a false positive. A calibrated test fires about
+5% of the time. Both of check()'s engines are reported.
 
 Alongside it runs what most people actually use -- a Welch t-test on the
 same two groups (scipy's `ttest_ind(equal_var=False)`) -- so the table shows
@@ -42,9 +46,24 @@ ALPHA = 0.05
 HORIZONS = (1, 5, 20)
 GENERATORS = ("garch", "garch_t4", "regime")
 CONDITIONS = ("drop_2pct", "up_day", "momentum_20", "vol_shock")
+# Autocorrelated returns: bid-ask bounce (negative) and trend (positive).
+# Conditions computed from past returns genuinely predict AR returns, so
+# they are not nulls here; only a condition independent of the returns is.
+AR_GENERATORS = ("ar_neg", "ar_pos")
+EXOG = "exog_persistent"
+NULL_GRID = [(g, c) for g in GENERATORS for c in CONDITIONS + (EXOG,)] + [
+    (g, EXOG) for g in AR_GENERATORS
+]
 
 
 def generate(kind: str, n: int, seed: int) -> list[float]:
+    if kind in AR_GENERATORS:
+        phi = -0.25 if kind == "ar_neg" else 0.15
+        out, prev = [], 0.0
+        for e in generate("garch", n, seed):
+            prev = phi * prev + e
+            out.append(prev)
+        return out
     rng = random.Random(seed)
     out: list[float] = []
     if kind in ("garch", "garch_t4"):
@@ -88,6 +107,19 @@ def condition(kind: str, r: list[float]) -> list[bool | None]:
         for i in range(19, n):
             out[i] = growth[i + 1] / growth[i - 19] > 1
         return out
+    if kind == EXOG:
+        # Independent of the returns, flipping about every 30 bars. The
+        # seed is derived from r[0] only so each path gets its own label
+        # series reproducibly: Random() hashes the seed, so the draws carry
+        # no information about r[0]'s sign or size -- and r[0] is in no
+        # tested forward window anyway (windows start at bar 1).
+        rng = random.Random(int(abs(r[0]) * 1e15) + 17)
+        state, out = rng.random() < 0.5, []
+        for _ in r:
+            if rng.random() < 1 / 30:
+                state = not state
+            out.append(state)
+        return out
     if kind == "vol_shock":
         out = [None] * n
         for i in range(20, n):
@@ -109,9 +141,9 @@ def welch_p(labels: list[bool | None], fwd: list[float | None]) -> float | None:
     return float(ttest_ind(a, b, equal_var=False).pvalue)
 
 
-def run_config(args: tuple[str, str, int, int, int]) -> tuple[str, str, int, int, int, int]:
+def run_config(args):
     gen, cond_kind, horizon, trials, n_bars = args
-    usable = tok_hits = t_hits = 0
+    usable = hod_hits = rot_hits = t_hits = 0
     for t in range(trials):
         r = generate(gen, n_bars, seed=10_000 + t)
         labels = condition(cond_kind, r)
@@ -119,10 +151,11 @@ def run_config(args: tuple[str, str, int, int, int]) -> tuple[str, str, int, int
         if res.verdict == "NOT REPORTABLE":
             continue
         usable += 1
-        tok_hits += res.significant
+        hod_hits += res.p_hodrick <= ALPHA
+        rot_hits += res.p_rotation <= ALPHA
         p = welch_p(labels, forward_returns(r, horizon))
         t_hits += p is not None and p <= ALPHA
-    return gen, cond_kind, horizon, usable, tok_hits, t_hits
+    return gen, cond_kind, horizon, usable, hod_hits, rot_hits, t_hits
 
 
 def main() -> int:
@@ -132,23 +165,25 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
 
-    jobs = [(g, c, h, args.trials, args.bars) for g in GENERATORS for c in CONDITIONS for h in HORIZONS]
+    jobs = [(g, c, h, args.trials, args.bars) for g, c in NULL_GRID for h in HORIZONS]
     started = time.time()
     print(f"check() calibration -- {args.trials} null paths x {args.bars} bars per row. "
           f"No edge exists; a calibrated test fires at {ALPHA:.0%}.\n", flush=True)
-    header = f"| generator | condition | horizon | t-test | TokIO check() | usable paths |"
-    print(header)
-    print("|---|---|---:|---:|---:|---:|", flush=True)
-    worst_tok = worst_t = 0.0
+    print("| generator | condition | horizon | t-test | TokIO hodrick (default) | TokIO rotation | usable paths |")
+    print("|---|---|---:|---:|---:|---:|---:|", flush=True)
+    worst = {"t": 0.0, "hod": 0.0, "rot": 0.0}
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        for gen, cond_kind, h, usable, tok, tt in pool.map(run_config, jobs):
+        for gen, cond_kind, h, usable, hod, rot, tt in pool.map(run_config, jobs):
             if not usable:
-                print(f"| {gen} | {cond_kind} | {h} | - | - | 0 |", flush=True)
+                print(f"| {gen} | {cond_kind} | {h} | - | - | - | 0 |", flush=True)
                 continue
-            tok_rate, t_rate = tok / usable, tt / usable
-            worst_tok, worst_t = max(worst_tok, tok_rate), max(worst_t, t_rate)
-            print(f"| {gen} | {cond_kind} | {h} | {t_rate:.1%} | {tok_rate:.1%} | {usable} |", flush=True)
-    print(f"\nworst case: t-test {worst_t:.1%}, TokIO {worst_tok:.1%}")
+            rates = {"t": tt / usable, "hod": hod / usable, "rot": rot / usable}
+            for k, v in rates.items():
+                worst[k] = max(worst[k], v)
+            print(f"| {gen} | {cond_kind} | {h} | {rates['t']:.1%} | {rates['hod']:.1%} | "
+                  f"{rates['rot']:.1%} | {usable} |", flush=True)
+    print(f"\nworst case: t-test {worst['t']:.1%}, TokIO hodrick {worst['hod']:.1%}, "
+          f"TokIO rotation {worst['rot']:.1%}")
     print(f"elapsed {time.time() - started:.0f}s")
     return 0
 

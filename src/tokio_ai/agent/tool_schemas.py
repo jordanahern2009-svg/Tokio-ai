@@ -95,9 +95,10 @@ TOOLS = [
             "'does X predict what happens next'. Prefer this over "
             "test_hypothesis for anything involving raw price data; only use "
             "test_hypothesis directly when you already have two numeric "
-            "groups from elsewhere. Uses a circular-shift randomization test, "
-            "which accounts for the fact that multi-day forward returns come "
-            "from overlapping windows and that conditions cluster in time."
+            "groups from elsewhere. Uses the same engines as tokio_ai.check(): "
+            "Hodrick standard errors (overlapping windows handled exactly) "
+            "with a circular-shift randomization test as a second opinion. "
+            "If the tool reports that the second opinion disagrees, say so."
         ),
         "input_schema": {
             "type": "object",

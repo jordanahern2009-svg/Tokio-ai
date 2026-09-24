@@ -76,9 +76,11 @@ recover a NaN that pandas has already turned into `False`.)
 Here is that exact check on 10 years of real SPY closes (2016-09 to 2026-09):
 
 ```
-NOT SIGNIFICANT (p=0.3081, alpha=0.05). Over the next 20 bars, the 1742
-condition bars averaged +1.004% vs +1.890% on the other 731 (gap -0.887%).
+NOT SIGNIFICANT (p=0.3274, alpha=0.05). Over the next 20 bars, the 1742
+condition bars averaged +1.003% vs +1.890% on the other 731 (gap -0.887%).
 ```
+
+(The rotation engine, as a second opinion: p = 0.31.)
 
 A Welch t-test on the same two groups returns **p = 0.0001**. That's how
 you end up "discovering" a mean-reversion edge. The trap is that
@@ -91,19 +93,41 @@ What `check()` handles for you:
   condition can never predict its own bar. Two pandas Series with
   different indexes raise an error instead of being silently paired by
   position.
-- **Overlapping windows and clustered conditions**, via a circular-shift
-  randomization test that keeps the time structure of both series intact.
-- **Volatility-selecting conditions**, via a studentized statistic, plus
-  a note telling you which way a naive test would have been wrong.
+- **Overlapping windows and persistent conditions**, handled exactly by
+  the default Hodrick engine, and checked by a rotation test that keeps
+  the time structure of both series intact.
+- **Volatility-selecting conditions**, via heteroskedasticity-robust
+  statistics, plus a note telling you which way a naive test would have
+  been wrong.
 - **Testing many ideas.** Pass `ledger=tokio_ai.TestLedger()` to every
   call, and each verdict is Benjamini-Hochberg corrected against all of
   them.
 - **Tiny samples.** Fewer than 30 bars on either side returns
   `NOT REPORTABLE`, not a p-value.
 
-Its false-positive rate is measured on simulated markets with fat tails,
-volatility regime switches and persistent conditions. See
-[the calibration study](docs/calibration.md#check-on-harsher-nulls).
+**Two engines on every call.** The verdict comes from Hodrick (1992)
+standard errors, which handle the overlap between multi-bar windows
+*exactly* instead of estimating it, plus a short HAC for the returns' own
+autocorrelation. A circular-shift randomization test runs alongside as an
+assumption-free second opinion, and the result tells you when they
+disagree. With numpy installed both are fast: the rotation test evaluates
+every rotation through an FFT, in 1.2 s at a million bars.
+
+**How it compares to the tools quants already use**, on 51 simulated
+markets with no edge (size) and with a planted one (power):
+
+| test | worst false-positive rate | mean power |
+|---|---:|---:|
+| Welch t-test | 64.0% | 74.0% |
+| Newey-West (HAC, lags = h) | 15.0% | 74.2% |
+| stationary bootstrap (`arch`) | 15.0% | 74.3% |
+| **TokIO `check()`** | **7.7%** | 73.7% |
+
+Same power as Newey-West, within half a point, at half its worst-case
+false-positive rate. The default engine was picked by that benchmark,
+after two other designs lost. [The full head-to-head, what we tried, and
+where each engine is weaker
+→](docs/calibration.md#head-to-head-tokio-vs-newey-west-vs-the-stationary-bootstrap)
 
 ## Why this exists
 

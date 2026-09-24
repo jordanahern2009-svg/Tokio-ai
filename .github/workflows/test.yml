@@ -44,3 +44,4 @@ jobs:
       - run: python scripts/calibration_study.py --trials 15 --bars 400
       - run: pip install -e ".[calibration]"
       - run: python scripts/calibration_check.py --trials 5 --bars 400 --workers 2
+      - run: python scripts/benchmark.py --trials 2 --bars 400 --workers 2

@@ -2,17 +2,40 @@
 
 ## 0.4.0 — 2026-09-24
 
-- **`tokio_ai.check(returns, condition, horizon)`**: the calibrated engine
-  as a plain library call on your own data (lists, numpy or pandas). No
-  agent, API key or network, and it doesn't import the LLM client or the
-  TUI. Outcomes start at bar i+1, so a condition can't predict its own
-  bar. Pandas inputs with mismatched indexes raise an error instead of
-  pairing by position. An optional `ledger=` applies Benjamini-Hochberg
-  correction across checks.
+- **`tokio_ai.check(returns, condition, horizon)`**: the calibrated
+  engines as a plain library call on your own data (lists, numpy or
+  pandas). No agent, API key or network, and it doesn't import the LLM
+  client or the TUI. Outcomes start at bar i+1, so a condition can't
+  predict its own bar. Pandas inputs with mismatched indexes raise an
+  error instead of pairing by position. An optional `ledger=` applies
+  Benjamini-Hochberg correction across checks.
 - **`scripts/calibration_check.py`**: false-positive rates on fat tails,
-  volatility regimes and a persistent momentum condition, next to a Welch
-  t-test. Worst case: TokIO 6.7%, t-test 56.7%. See
+  volatility regimes, a persistent momentum condition and autocorrelated
+  returns, next to a Welch t-test. Worst case across 51 configurations:
+  TokIO 7.4% (default engine) and 7.0% (rotation), t-test 61.0%. See
   [docs/calibration.md](docs/calibration.md#check-on-harsher-nulls).
+- **Exact and fast with numpy.** The circular-shift test now evaluates
+  every rotation at once through an FFT (a circular cross-correlation,
+  zero-padded to a power of two so arbitrary lengths stay fast). It used to
+  sample 5,000 rotations. It's exact at any n: 0.07 s at 100k bars
+  (previously 20.6 s) and 1.2 s at 1M. `check()` has a matching vectorized
+  preparation path. Without numpy, the pure-Python path still runs and is
+  the reference that the fast path is tested against.
+- **New default engine: Hodrick (1992) standard errors + a short HAC**
+  (`rigor/overlap.py`). Overlapping windows are handled exactly by
+  regrouping the statistic by bar; a Bartlett kernel with the Newey-West
+  rule-of-thumb bandwidth covers the returns' own short-range
+  autocorrelation. The rotation test still runs on every call as a second
+  opinion, and `__str__` flags it when they disagree. `method="rotation"`
+  makes it the verdict. The agent's `test_return_pattern` tool now goes
+  through `check()`, so the agent and the library agree.
+- **`scripts/benchmark.py`**: head-to-head size and power against
+  Newey-West (statsmodels) and a stationary block bootstrap (arch) on 51
+  null configurations, including autocorrelated returns. Worst-case size:
+  TokIO 7.7%, Newey-West 15.0%, bootstrap 15.0%, t-test 64.0%, at equal
+  power (73.7% vs 74.2%). The default engine was chosen by this benchmark,
+  after a minimum-shift rotation variant and a Cauchy combination both
+  lost. docs/calibration.md has the full account.
 - **Fixed: the agent was dead for every new user.** NVIDIA retired the
   default model (`llama-3.3-nemotron-super-49b-v1.5`) on 2026-08-26, and
   every request returned HTTP 410. The new default is
