@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 — 2026-09-24
+
+- **`tokio_ai.check(returns, condition, horizon)`**: the calibrated engine
+  as a plain library call on your own data (lists, numpy or pandas). No
+  agent, API key or network, and it doesn't import the LLM client or the
+  TUI. Outcomes start at bar i+1, so a condition can't predict its own
+  bar. Pandas inputs with mismatched indexes raise an error instead of
+  pairing by position. An optional `ledger=` applies Benjamini-Hochberg
+  correction across checks.
+- **`scripts/calibration_check.py`**: false-positive rates on fat tails,
+  volatility regimes and a persistent momentum condition, next to a Welch
+  t-test. Worst case: TokIO 6.7%, t-test 56.7%. See
+  [docs/calibration.md](docs/calibration.md#check-on-harsher-nulls).
+- **Fixed: the agent was dead for every new user.** NVIDIA retired the
+  default model (`llama-3.3-nemotron-super-49b-v1.5`) on 2026-08-26, and
+  every request returned HTTP 410. The new default is
+  `nvidia/nemotron-3-super-120b-a12b`, picked by running the same real
+  tasks on 7 free-tier candidates (details in `agent/loop.py`).
+- **Fixed:** the unequal-variance note said a condition selected
+  "volatile" days even when it selected calm ones. It also claimed a
+  naive test would always overstate significance. Pooling overstates only
+  when the smaller group is the noisier one. Both messages now report the
+  real direction.
+
 ## 0.3.0 — 2026-08-17
 
 The rigor engine was measured against its own promise for the first time,

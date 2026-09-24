@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tokio-ai"
-version = "0.3.0"
+version = "0.4.0"
 description = "An open-source financial research agent that runs every claim through honest statistical testing before trusting it."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,6 +42,8 @@ tokio-ai-plain = "tokio_ai.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Only for scripts/calibration_check.py, which compares against scipy's t-test.
+calibration = ["scipy"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tokio_ai"]

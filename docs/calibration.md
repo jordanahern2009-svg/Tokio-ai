@@ -160,6 +160,82 @@ A tool built to stop people fooling themselves with statistics had, in its
 own front-page example, fooled itself with statistics. Finding that is the
 point of writing the check.
 
+## `check()` on harsher nulls
+
+v0.4.0 adds `tokio_ai.check()`, which runs the engine on any condition a user
+writes. So the engine has to hold on more than the two conditions and the
+one generator above. This second study adds:
+
+- **fat tails**: GARCH with Student-t(4) shocks (`garch_t4`)
+- **volatility regimes**: a calm (0.8%/day) and a crisis (3%/day) state,
+  each lasting about 100 bars (`regime`)
+- **a persistent condition**: "20-bar momentum is positive" stays true or
+  false for weeks. It is the hardest case for a rotation test, because
+  there are few independent runs of the label to rotate.
+
+Next to it runs what most people actually use: a Welch t-test
+(`scipy.stats.ttest_ind(equal_var=False)`) on the same two groups.
+300 null paths × 1,000 bars per row. No edge exists anywhere, so both
+columns should read about 5%.
+
+```bash
+python scripts/calibration_check.py --trials 300   # ~5 min on 4 cores
+```
+
+| generator | condition | horizon | t-test | TokIO `check()` |
+|---|---|---:|---:|---:|
+| garch | drop 2% | 1 | 4.6% | 4.3% |
+| garch | drop 2% | 5 | 7.5% | 3.2% |
+| garch | drop 2% | 20 | 21.2% | 2.5% |
+| garch | up day | 1 | 3.3% | 3.3% |
+| garch | up day | 5 | 5.7% | 5.3% |
+| garch | up day | 20 | 6.3% | 5.0% |
+| garch | momentum 20 | 1 | 6.7% | 4.3% |
+| garch | momentum 20 | 5 | **35.3%** | 5.3% |
+| garch | momentum 20 | 20 | **56.7%** | 2.3% |
+| garch | vol shock | 1 | 5.7% | 5.7% |
+| garch | vol shock | 5 | 3.0% | 2.7% |
+| garch | vol shock | 20 | 3.7% | 4.0% |
+| garch_t4 | drop 2% | 1 | 5.3% | 4.7% |
+| garch_t4 | drop 2% | 5 | 6.5% | 4.2% |
+| garch_t4 | drop 2% | 20 | 25.6% | 3.7% |
+| garch_t4 | up day | 1 | 4.7% | 4.0% |
+| garch_t4 | up day | 5 | 6.3% | 6.0% |
+| garch_t4 | up day | 20 | 6.7% | 5.3% |
+| garch_t4 | momentum 20 | 1 | 5.0% | 4.7% |
+| garch_t4 | momentum 20 | 5 | **33.0%** | 4.3% |
+| garch_t4 | momentum 20 | 20 | **51.7%** | 3.3% |
+| garch_t4 | vol shock | 1 | 4.3% | 3.7% |
+| garch_t4 | vol shock | 5 | 4.3% | 3.0% |
+| garch_t4 | vol shock | 20 | 4.0% | 3.7% |
+| regime | drop 2% | 1 | 4.0% | 4.0% |
+| regime | drop 2% | 5 | 10.7% | 5.0% |
+| regime | drop 2% | 20 | 24.1% | 3.3% |
+| regime | up day | 1 | 6.3% | 6.7% |
+| regime | up day | 5 | 3.7% | 4.7% |
+| regime | up day | 20 | 5.3% | 4.3% |
+| regime | momentum 20 | 1 | 7.7% | 3.7% |
+| regime | momentum 20 | 5 | **32.3%** | 2.7% |
+| regime | momentum 20 | 20 | **54.7%** | 3.3% |
+| regime | vol shock | 1 | 4.0% | 3.7% |
+| regime | vol shock | 5 | 7.3% | 5.3% |
+| regime | vol shock | 20 | 9.0% | 6.3% |
+
+**Worst case: t-test 56.7%, TokIO 6.7%.** With 300 paths per row, one
+standard error is about 1.3 points, so 6.7% is within noise of 5%. The
+t-test's failures sit exactly where the time structure is strongest:
+persistent conditions and long horizons.
+
+On real data, this is not hypothetical. On 10 years of SPY, "20-day
+momentum up → next 20 days" gets p = 0.0001 from the t-test and p = 0.31
+from `check()`.
+
+**The honest cost:** at 20-bar horizons `check()` runs somewhat
+conservative (2.3–3.7% in several rows). It is slightly less likely to
+catch a real edge there than a perfectly sized test would be. We accept
+that trade: a tool whose job is to stop you fooling yourself should lean
+toward "not proven".
+
 ## What is still not handled
 
 - **Multiple testing across sessions.** The `TestLedger` corrects for every
@@ -171,8 +247,11 @@ point of writing the check.
 - **The rotation null assumes stationarity.** A structural break mid-sample
   (a regime change, a company that behaves like two different companies
   before and after) violates it.
-- **One artificial junction.** A circular shift joins the end of the series
-  to its start. Negligible at n in the thousands, not free.
-- **GARCH is not reality.** It captures volatility clustering, which is what
-  broke the old test. Real returns also have jumps, fat tails beyond GARCH,
-  and intraday structure this study does not simulate.
+- **Artificial junctions.** A circular shift joins the end of the series
+  to its start. `check()` also drops bars with missing data, which joins the
+  bars on either side of every gap. A quick test with one 50-bar gap
+  (GARCH, momentum condition, 200 paths) measured 6% vs 7% without the gap,
+  so the effect looks negligible. But many gaps haven't been tested.
+- **Simulation is not reality.** The studies cover volatility clustering,
+  fat tails and volatility regimes. They do not simulate jumps, intraday
+  structure, or drifting means.

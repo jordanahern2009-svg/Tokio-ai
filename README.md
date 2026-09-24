@@ -53,6 +53,58 @@ no API key or network needed:
 python scripts/calibration_study.py
 ```
 
+## Check your own backtest
+
+No agent, no API key, no network. You bring returns and a condition you
+think predicts them; `check()` tells you whether that's distinguishable
+from noise.
+
+```python
+import tokio_ai
+
+r = prices.pct_change()                     # your data: list, numpy or pandas
+past = prices.shift(20)
+momentum = (prices > past).where(past.notna())  # anything known at the bar's close
+print(tokio_ai.check(r, momentum, horizon=20))
+```
+
+(The `.where(...)` is there because pandas evaluates `NaN > x` as `False`,
+not NaN. Without it, the first 20 bars, where momentum is unknown, get
+counted as "momentum down". `check()` skips None and NaN, but it can't
+recover a NaN that pandas has already turned into `False`.)
+
+Here is that exact check on 10 years of real SPY closes (2016-09 to 2026-09):
+
+```
+NOT SIGNIFICANT (p=0.3081, alpha=0.05). Over the next 20 bars, the 1742
+condition bars averaged +1.004% vs +1.890% on the other 731 (gap -0.887%).
+```
+
+A Welch t-test on the same two groups returns **p = 0.0001**. That's how
+you end up "discovering" a mean-reversion edge. The trap is that
+consecutive 20-day returns share 19 of their 20 days, so 2,500 bars carry
+nowhere near 2,500 independent observations. The t-test doesn't know that.
+
+What `check()` handles for you:
+
+- **Lookahead.** The outcome for bar *i* starts at bar *i+1*, so a
+  condition can never predict its own bar. Two pandas Series with
+  different indexes raise an error instead of being silently paired by
+  position.
+- **Overlapping windows and clustered conditions**, via a circular-shift
+  randomization test that keeps the time structure of both series intact.
+- **Volatility-selecting conditions**, via a studentized statistic, plus
+  a note telling you which way a naive test would have been wrong.
+- **Testing many ideas.** Pass `ledger=tokio_ai.TestLedger()` to every
+  call, and each verdict is Benjamini-Hochberg corrected against all of
+  them.
+- **Tiny samples.** Fewer than 30 bars on either side returns
+  `NOT REPORTABLE`, not a p-value.
+
+Its false-positive rate is measured on simulated markets with fat tails,
+volatility regime switches and persistent conditions. See
+[the calibration study](docs/calibration.md#check-on-harsher-nulls).
+
 ## Why this exists
 
 Generic LLM agents are commoditized -- anyone can wrap an LLM in a chat loop
@@ -179,8 +231,11 @@ Python first, optimize what's proven slow, not what looks slow.
 
 Early and under active development. The rigor engine and data-ingest tools
 are tested against live sources. The agent loop has been verified
-end-to-end against NVIDIA's free NIM catalog (`nvidia/llama-3.3-nemotron-super-49b-v1.5`
+end-to-end against NVIDIA's free NIM catalog (`nvidia/nemotron-3-super-120b-a12b`
 by default) -- real tool calls, real data, correct multi-turn answers.
+Free-tier models do get retired: the previous default went dark on
+2026-08-26. If you get an HTTP 410 "end of life" error, set `TOKIO_AI_MODEL`
+to another tool-calling model from https://build.nvidia.com.
 
 **Known limitation:** the free tier has inconsistent latency (observed
 anywhere from ~5s to 90s+ for the same model/prompt shape). That's the

@@ -30,6 +30,12 @@ class TestLedger:
     def record(self, name: str, result: PermutationResult) -> None:
         self.tests.append(RecordedTest(name, result))
 
+    def significant_at(self, index: int, alpha: float = 0.05) -> bool:
+        """BH-corrected significance of the test at `index`, against every
+        test recorded so far. A later test can change the answer -- the
+        correction only knows about the tests it has already seen."""
+        return benjamini_hochberg([t.result.p_value for t in self.tests], alpha=alpha)[index]
+
     def verdict(self, name: str, alpha: float = 0.05) -> str:
         p_values = [t.result.p_value for t in self.tests]
         sig = benjamini_hochberg(p_values, alpha=alpha)
@@ -60,11 +66,20 @@ class TestLedger:
             if t.result.variance_ratio is not None and (
                 t.result.variance_ratio > 1.5 or t.result.variance_ratio < 1 / 1.5
             ):
+                # Direction matters for the explanation: a ratio below 1 means
+                # the condition picks CALM days, and calling those "volatile"
+                # would hand the agent a false sentence to repeat.
+                # Likewise the bias: pooling overstates significance only when
+                # the smaller group is the noisier one.
+                vr = t.result.variance_ratio
+                selects = "volatile" if vr > 1 else "calm"
+                smaller_is_noisier = (t.result.n_a < t.result.n_b) == (vr > 1)
+                bias = "overstated" if smaller_is_noisier else "understated"
                 detail += (
                     f". Note: the two groups have quite different variances "
-                    f"(ratio {t.result.variance_ratio:.2f}x) -- the condition is "
-                    f"selecting unusually volatile days, so a test on the raw mean "
-                    f"difference would have overstated this result"
+                    f"(ratio {vr:.2f}x) -- the condition is selecting unusually "
+                    f"{selects} days, so a test on the raw mean difference would "
+                    f"have {bias} this result"
                 )
             return detail + "."
         raise KeyError(f"no test recorded under name {name!r}")

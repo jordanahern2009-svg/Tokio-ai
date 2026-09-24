@@ -25,15 +25,19 @@ from .system_prompt import SYSTEM_PROMPT
 from .tool_schemas import TOOLS, to_openai_format
 
 DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
-# Picked empirically, not from a spec sheet: of the 4 candidates tried on
-# NVIDIA's free tier, this was the only one that (a) was actually enabled for
-# a free account and (b) reliably returned well-formed tool calls in well
-# under the timeout. meta/llama-3.3-70b-instruct consistently timed out
-# (>90s, likely not warm on the free tier); writer/palmyra-fin-70b-32k and
-# mistralai/mistral-large-2-instruct both 404'd as not enabled for this
-# account tier. Nemotron is also NVIDIA's own agentic/tool-use-tuned model,
-# which tracks with it being the most reliable one here.
-DEFAULT_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+# Picked empirically, not from a spec sheet. The previous default,
+# nvidia/llama-3.3-nemotron-super-49b-v1.5, was retired by NVIDIA on
+# 2026-08-26 and started returning HTTP 410 for every request -- the agent was
+# dead on arrival for anyone who installed it after that, and no unit test
+# could see it. Replacement chosen 2026-09-24 by running the same real tasks
+# (a test_return_pattern call whose p-value must be quoted exactly; an SEC
+# filings lookup whose dates were checked by hand) on 7 free-tier candidates:
+# this one was 2/2 correct at 10-21s. openai/gpt-oss-20b once tested the
+# opposite condition (rises instead of falls); nemotron-3.5-lightning timed
+# out once and misreported a filing date; deepseek-v4.1-flash and
+# glm-5.3-flash timed out; kimi-k2.6 and nemotron-nano-3 404'd for a free
+# account. Expect this to happen again -- free-tier models get retired.
+DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 DEFAULT_TIMEOUT = 60.0  # reasoning models can take a while; don't time out mid-thought
 MAX_TOOL_ROUNDS = 8  # hard cap so a confused loop can't spin forever
 
